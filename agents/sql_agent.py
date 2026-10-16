@@ -23,8 +23,11 @@ All monetary values are in USD. Dates are in ISO 8601 format.
 status in projects is one of: 'active', 'completed', 'on-hold'.
 """
 
+# "INTO" added after tests/test_validator.py found "SELECT * INTO clients_copy FROM clients"
+# passing every rule: it starts with SELECT and has no other blocked word, yet PostgreSQL
+# runs it as CREATE TABLE + copy -- a write. (INSERT INTO is already caught by INSERT.)
 BLOCKED_KEYWORDS = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE",
-                    "EXEC", "EXECUTE", "GRANT", "REVOKE"]
+                    "EXEC", "EXECUTE", "GRANT", "REVOKE", "INTO"]
 
 
 def validate_sql(query: str) -> dict:
@@ -74,10 +77,15 @@ def execute_query_safely(sql: str) -> dict:
         return {"success": False, "error": validation["reason"], "validation": "BLOCKED", "sql": sql}
 
     try:
+                # Defence in depth: PostgreSQL itself enforces read-only and a time limit on
+        # this connection, so a write that slips past validate_sql (as SELECT ... INTO
+        # did in testing) is refused by the database, and a slow query (e.g. pg_sleep,
+        # which validate_sql allows) is cancelled after 10 seconds.
         conn = psycopg2.connect(
             host=os.getenv("RDS_HOST"), port=int(os.getenv("RDS_PORT")),
             dbname=os.getenv("RDS_DATABASE"), user=os.getenv("RDS_USER"),
-            password=os.getenv("RDS_PASSWORD")
+            password=os.getenv("RDS_PASSWORD"),
+            options="-c default_transaction_read_only=on -c statement_timeout=10000"
         )
         cur = conn.cursor()
         cur.execute(sql)
