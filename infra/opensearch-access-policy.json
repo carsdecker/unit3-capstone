@@ -1,0 +1,1 @@
+{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"AWS": ["arn:aws:iam::798555098734:role/orchestrator-lambda-role-cdecker", "arn:aws:iam::798555098734:user/Whiz_User_356064.20106403"]}, "Action": "es:*", "Resource": "arn:aws:es:us-east-1:798555098734:domain/orchestrator-search-cdecker/*"}]}

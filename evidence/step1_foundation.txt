@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/du_356064-1790187768/bootcamp/unit3-capstone/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/du_356064-1790187768/bootcamp/unit3-capstone
+plugins: anyio-4.15.1
+collecting ... collected 6 items
+
+tests/test_foundation.py::test_rds_table_has_rows[clients] 
+  RDS clients: 5 rows
+PASSED
+tests/test_foundation.py::test_rds_table_has_rows[projects] 
+  RDS projects: 6 rows
+PASSED
+tests/test_foundation.py::test_rds_table_has_rows[consultants] 
+  RDS consultants: 6 rows
+PASSED
+tests/test_foundation.py::test_rds_table_has_rows[invoices] 
+  RDS invoices: 7 rows
+PASSED
+tests/test_foundation.py::test_opensearch_index_has_documents 
+  OpenSearch 'documents': 8 chunks
+PASSED
+tests/test_foundation.py::test_opensearch_finds_the_right_document 
+  top hit: remote-work-policy.pdf (score 1.357)
+PASSED
+
+============================== 6 passed in 0.77s ===============================
