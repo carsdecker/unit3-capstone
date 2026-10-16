@@ -1,7 +1,7 @@
 """
 agents/sql_agent.py -- validated SQL Query Agent, wrapped to the standard
 {success, answer, sources, metadata} interface from the Shared Tool Registry lab.
-(Course file from Deployment Patterns on AWS.)
+(Course file from Deployment Patterns on AWS, with the changes noted below.)
 
 Self-contained: generate_sql, validate_sql and execute_query_safely are all in
 this file, so it works inside a Lambda package with nothing else bundled.
@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 from bedrock_client import invoke_claude
 load_dotenv()
 
+# "status in invoices" added after Step 7: asked "Which client has overdue invoices?",
+# Claude invented its own definition (status != 'paid' AND due_date < today) because
+# only the projects statuses were documented.
 SCHEMA_CONTEXT = """
 Tables available:
 - clients(id, name, industry, region, contract_value, created_date)
@@ -21,6 +24,7 @@ Tables available:
 
 All monetary values are in USD. Dates are in ISO 8601 format.
 status in projects is one of: 'active', 'completed', 'on-hold'.
+status in invoices is one of: 'paid', 'pending', 'overdue'.
 """
 
 # "INTO" added after tests/test_validator.py found "SELECT * INTO clients_copy FROM clients"
@@ -56,17 +60,20 @@ def validate_sql(query: str) -> dict:
     return {"valid": True, "reason": "OK"}
 
 
-def generate_sql(question: str) -> str:
+def generate_sql(question: str) -> tuple[str, dict]:
     prompt = (
         f"{SCHEMA_CONTEXT}\n\n"
         f"Generate a SQL query to answer: {question}\n\n"
         "Return ONLY the SQL query. No explanation, no markdown, no backticks."
     )
-    result = invoke_claude(prompt, max_tokens=512)
-    # NOTE (Step 6): this call's token usage is not returned -- only the
-    # interpretation call's tokens reach the logs. To be fixed in Step 6.
+    result = invoke_claude(prompt, max_tokens=512, component="sql_generation")
     sql = result["text"].strip()
-    return sql.removeprefix("```sql").removeprefix("```").removesuffix("```").strip()
+    sql = sql.removeprefix("```sql").removeprefix("```").removesuffix("```").strip()
+    # Step 6 fix: the course version discarded this call's token usage, so the
+    # schema-bearing generation prompt never appeared in any cost figure.
+    usage = {"input": result["input_tokens"], "output": result["output_tokens"],
+             "cost_usd": result["cost_usd"]}
+    return sql, usage
 
 
 def execute_query_safely(sql: str) -> dict:
@@ -77,7 +84,7 @@ def execute_query_safely(sql: str) -> dict:
         return {"success": False, "error": validation["reason"], "validation": "BLOCKED", "sql": sql}
 
     try:
-                # Defence in depth: PostgreSQL itself enforces read-only and a time limit on
+        # Defence in depth: PostgreSQL itself enforces read-only and a time limit on
         # this connection, so a write that slips past validate_sql (as SELECT ... INTO
         # did in testing) is refused by the database, and a slow query (e.g. pg_sleep,
         # which validate_sql allows) is cancelled after 10 seconds.
@@ -98,7 +105,7 @@ def execute_query_safely(sql: str) -> dict:
 
 
 def validated_sql_agent(question: str) -> dict:
-    sql = generate_sql(question)
+    sql, gen_usage = generate_sql(question)
     result = execute_query_safely(sql)
 
     if not result["success"]:
@@ -106,20 +113,37 @@ def validated_sql_agent(question: str) -> dict:
             "answer": f"Query blocked or failed: {result['error']}",
             "sql": sql,
             "validation": result["validation"],
-            "token_usage": {"input": 0, "output": 0},
+            # The generation call was still made (and paid for) even though the
+            # SQL was blocked; the course version reported 0 here.
+            "token_usage": {"sql_generation": gen_usage},
         }
 
+        # Step 7 fix: the course deployment prompt showed only question, columns and rows.
+    # Without the SQL, Claude read the filtered client list as "the clients table" and
+    # answered "there is no invoice data". It also used general knowledge to answer the
+    # document half of "both" questions. The orchestrator-lab version included the SQL;
+    # this restores it and keeps the answer to the rows.
     prompt = (
-        f"Question: {question}\nColumns: {result['columns']}\n"
-        f"Data: {result['rows'][:20]}\n\nAnswer concisely."
+        f"Question: {question}\n"
+        f"SQL that was run (its WHERE clause already applies the question's conditions): {sql}\n"
+        f"Columns: {result['columns']}\n"
+        f"Rows returned: {result['rows'][:20]}\n\n"
+        "Answer the question using ONLY these rows. If part of the question cannot be "
+        "answered from these rows, say so in one sentence and do not answer it from "
+        "general knowledge. Answer concisely."
     )
-    interpretation = invoke_claude(prompt, max_tokens=500)
+    interpretation = invoke_claude(prompt, max_tokens=500, component="sql_interpretation")
 
     return {
         "answer": interpretation["text"],
         "sql": sql,
         "validation": result["validation"],
-        "token_usage": {"input": interpretation["input_tokens"], "output": interpretation["output_tokens"]},
+        "token_usage": {
+            "sql_generation": gen_usage,
+            "sql_interpretation": {"input": interpretation["input_tokens"],
+                                   "output": interpretation["output_tokens"],
+                                   "cost_usd": interpretation["cost_usd"]},
+        },
     }
 
 

@@ -54,8 +54,9 @@ def generate_cited_answer(question: str, chunks: list[dict]) -> tuple[str, dict]
         "Always cite the source number(s) you used.\n\n"
         f"CONTEXT:\n{context}\n\nQUESTION: {question}\n\nANSWER:"
     )
-    result = invoke_claude(prompt, max_tokens=500)
-    return result["text"], {"input": result["input_tokens"], "output": result["output_tokens"]}
+    result = invoke_claude(prompt, max_tokens=500, component="retrieval_answer")
+    return result["text"], {"input": result["input_tokens"], "output": result["output_tokens"],
+                            "cost_usd": result["cost_usd"]}
 
 
 def check_grounding(answer: str, chunks: list[dict]) -> bool:
@@ -73,7 +74,7 @@ def run_retrieval_agent(question: str) -> dict:
             "success": False,
             "answer": "No relevant documents found.",
             "sources": [],
-            "metadata": {"chunk_count": 0, "grounded": False, "token_usage": {"input": 0, "output": 0}},
+            "metadata": {"chunk_count": 0, "grounded": False, "token_usage": {}},
         }
 
     answer, usage = generate_cited_answer(question, chunks)
@@ -84,6 +85,6 @@ def run_retrieval_agent(question: str) -> dict:
         "metadata": {
             "chunk_count": len(chunks),
             "grounded": check_grounding(answer, chunks),
-            "token_usage": usage,
+            "token_usage": {"retrieval_answer": usage},
         },
     }

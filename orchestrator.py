@@ -19,7 +19,7 @@ class OrchestratorState(TypedDict):
     sql_result: Optional[dict]
     retrieval_result: Optional[dict]
     final_answer: Optional[str]
-    token_usage: Optional[dict]
+    token_usage: Optional[dict]     # per component + "total" (see add_total)
 
 
 # Classification node: Claude routes using the tool registry's descriptions.
@@ -47,7 +47,8 @@ def route_question(state: OrchestratorState) -> OrchestratorState:
     # The descriptions come straight from tool_registry.py, so editing a
     # description there changes routing here -- one source of truth.
     tools = "\n".join(f"- {s['name']}: {s['description']}" for s in get_all_schemas())
-    result = invoke_claude(ROUTER_PROMPT.format(tools=tools, question=state["question"]), max_tokens=5)
+    result = invoke_claude(ROUTER_PROMPT.format(tools=tools, question=state["question"]),
+                           max_tokens=5, component="classification")
 
     # Normalise the reply: Claude may add a capital letter or a full stop.
     route = result["text"].strip().lower().strip(".")
@@ -56,9 +57,8 @@ def route_question(state: OrchestratorState) -> OrchestratorState:
         # dearer, but the question still gets answered, and SQL is still validated.
         route = "both"
 
-    usage = {"input": result["input_tokens"], "output": result["output_tokens"]}
-    # NOTE (Step 6): synthesise() currently overwrites token_usage, so this is lost
-    # by the end of the graph. Step 6 merges every component's usage.
+    usage = {"input": result["input_tokens"], "output": result["output_tokens"],
+             "cost_usd": result["cost_usd"]}
     return {**state, "route": route, "token_usage": {"classification": usage}}
 
 
@@ -76,8 +76,38 @@ def call_retrieval_agent(state: OrchestratorState) -> OrchestratorState:
     return {**state, "retrieval_result": result}
 
 
+def add_total(usage: dict) -> dict:
+    # Sum every component into a "total" entry (the Lambda response's token_usage).
+    parts = [v for k, v in usage.items() if k != "total"]
+    usage["total"] = {
+        "input": sum(p["input"] for p in parts),
+        "output": sum(p["output"] for p in parts),
+        "cost_usd": round(sum(p["cost_usd"] for p in parts), 6),
+    }
+    return usage
+
+
 def synthesise(state: OrchestratorState) -> OrchestratorState:
+    # Step 6 fix: the course version replaced token_usage with the synthesis call's
+    # tokens alone, hiding classification and both agents. Merge every component.
+    usage = dict(state.get("token_usage") or {})
+    for key in ("sql_result", "retrieval_result"):
+        if state.get(key):
+            usage.update(state[key]["metadata"].get("token_usage", {}))
+
     context = ""
+
+    # Step 7 fix: a blocked or failed SQL agent used to vanish silently, so
+    # "Delete all overdue invoices" answered "I was unable to find relevant
+    # information" -- hiding that the validator had refused it. Say what happened.
+    sql_note = ""
+    if state.get("sql_result") and not state["sql_result"].get("success"):
+        if state["sql_result"]["metadata"].get("validation") == "BLOCKED":
+            sql_note = ("The database part of this request was blocked: this system only runs "
+                        "read-only queries, so the generated SQL was not executed.")
+        else:
+            sql_note = "The database query could not be completed, so no database results are available."
+        context += f"SQL Agent Result:\n{sql_note}\n\n"
 
     if state.get("sql_result") and state["sql_result"].get("success"):
         r = state["sql_result"]
@@ -91,25 +121,34 @@ def synthesise(state: OrchestratorState) -> OrchestratorState:
         return {
             **state,
             "final_answer": "I was unable to find relevant information to answer this question.",
-            "token_usage": {"input": 0, "output": 0}
+            # Earlier calls were still made and paid for, so keep their usage.
+            "token_usage": add_total(usage),
         }
 
+    if sql_note and not state.get("retrieval_result"):
+        # SQL-only question that was blocked or failed: nothing for Claude to
+        # synthesise, so state the outcome directly (no extra Claude call).
+        return {**state, "final_answer": sql_note, "token_usage": add_total(usage)}
+
+    # Step 7 fix: "Only connect facts..." added after the Data Migration question's
+    # answer compared the project's $90,000 budget with the Q2 report's "48% spend",
+    # although the report never names that project -- an unsupported cross-source link.
     prompt = (
         f"Using the information below, answer the following question clearly.\n"
-        f"Cite which agent(s) and source(s) the information came from.\n\n"
+        f"Cite which agent(s) and source(s) the information came from.\n"
+        f"Only connect facts from different sources if one of the sources states that "
+        f"connection; otherwise present them separately.\n\n"
         f"Question: {state['question']}\n\n"
         f"Information:\n{context}"
     )
-    result = invoke_claude(prompt, max_tokens=800)
+    result = invoke_claude(prompt, max_tokens=800, component="synthesis")
+    usage["synthesis"] = {"input": result["input_tokens"], "output": result["output_tokens"],
+                          "cost_usd": result["cost_usd"]}
 
     return {
         **state,
         "final_answer": result["text"],
-        # NOTE (Step 6): only this synthesis call's tokens -- the agents' tokens are not added.
-        "token_usage": {
-            "input": result["input_tokens"],
-            "output": result["output_tokens"]
-        }
+        "token_usage": add_total(usage),
     }
 
 

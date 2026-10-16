@@ -20,7 +20,8 @@ def test_execute_query_safely_validates_before_connecting(monkeypatch):
 
 def test_full_sql_agent_path_blocks_before_the_database(monkeypatch):
     # "Claude" (faked, free) generates a destructive query; the whole agent runs.
-    monkeypatch.setattr(sql_agent, "generate_sql", lambda question: "DELETE FROM invoices")
+    monkeypatch.setattr(sql_agent, "generate_sql",
+                        lambda question: ("DELETE FROM invoices", {"input": 0, "output": 0, "cost_usd": 0.0}))
     monkeypatch.setattr(sql_agent.psycopg2, "connect", tripwire)
     monkeypatch.setattr(sql_agent, "invoke_claude",
                         lambda *a, **k: pytest.fail("Interpretation ran on a blocked query!"))
