@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/du_356064-1790187768/bootcamp/unit3-capstone/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/du_356064-1790187768/bootcamp/unit3-capstone
+configfile: pytest.ini
+plugins: anyio-4.15.1
+collecting ... collected 2 items
+
+tests/test_interface.py::test_tool_returns_standard_interface[sql_agent] 
+  run_sql_agent keys: ['answer', 'metadata', 'sources', 'success']
+PASSED
+tests/test_interface.py::test_tool_returns_standard_interface[retrieval_agent] 
+  run_retrieval_agent keys: ['answer', 'metadata', 'sources', 'success']
+PASSED
+
+============================== 2 passed in 3.62s ===============================

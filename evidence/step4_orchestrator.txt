@@ -1,0 +1,85 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/du_356064-1790187768/bootcamp/unit3-capstone/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/du_356064-1790187768/bootcamp/unit3-capstone
+configfile: pytest.ini
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 3 items
+
+tests/test_orchestrator.py::test_sql_only_question_runs_only_the_sql_agent 
+  route: sql
+  sql_result: success=True answer='We have **4** active projects.'
+  retrieval_result: None (agent did not run)
+  final_answer: ## Active Projects
+
+We currently have **4 active projects**.
+
+---
+
+**Source:**
+- 🗄️ **SQL Agent** — Query: `SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'`
+  token_usage: {'input': 99, 'output': 58}
+PASSED
+tests/test_orchestrator.py::test_retrieval_only_question_runs_only_the_retrieval_agent 
+  route: retrieval
+  sql_result: None (agent did not run)
+  retrieval_result: success=True answer='Employees can claim up to **$500 per year** toward home office equipment such as desks, chairs, monitor arms, and lighti'
+  final_answer: ## Home Office Equipment Claims
+
+Based on the retrieved information, employees can claim up to **$500 per year** for home office equipment.
+
+### Eligible Items Include:
+- Desks
+- Chairs
+- Monitor arms
+- Lighting
+
+### Key Requirements:
+- Claims must be submitted through the **standard expense reimbursement process**
+- **Itemized receipts** are required
+- Submissions must be made **no later than December 15** of the current calendar year
+- **Unused stipend amounts do not roll over** to the following year
+
+---
+
+📄 **Source:** Retrieval Agent — *remote-work-policy.pdf* (Source 2)
+  token_usage: {'input': 214, 'output': 154}
+PASSED
+tests/test_orchestrator.py::test_both_question_synthesises_and_attributes_each_agent 
+  route: both
+  sql_result: success=True answer='Based on the data provided, you have **4 active projects**.\n\nHowever, regarding the **core hours in your remote work pol'
+  retrieval_result: success=True answer='Based on the provided documents, I can only partially answer this question:\n\n**Core Hours:** All remote employees must b'
+  final_answer: ## Answer
+
+To fully answer your question, information was needed from **two different agents**, as neither source alone could provide a complete response.
+
+---
+
+### ✅ Active Projects: **4**
+
+- **Source:** SQL Agent
+- The SQL Agent queried the projects database directly (`SELECT COUNT(*) FROM projects WHERE status = 'active'`) and returned a count of **4 active projects**.
+- *Note: The Retrieval Agent could not confirm this figure from documents alone, as only one client engagement was referenced in the available files (q2-2026-client-report.pdf).*
+
+---
+
+### ✅ Remote Work Policy – Core Hours: **10:00 AM to 3:00 PM (local time zone)**
+
+- **Source:** Retrieval Agent — `remote-work-policy.pdf`
+- All remote employees are required to be **available and responsive between 10:00 AM and 3:00 PM in their local time zone**.
+- *Note: The SQL Agent had no data related to HR or remote work policies and could not answer this portion.*
+
+---
+
+### Summary
+
+| Question | Answer | Agent | Source |
+|---|---|---|---|
+| Active Projects | **4** | SQL Agent | Database query on `projects` table |
+| Core Hours | **10 AM – 3 PM (local time)** | Retrieval Agent | `remote-work-policy.pdf` |
+
+Both agents were required to fully answer this question, as each held information the other lacked.
+  token_usage: {'input': 380, 'output': 339}
+PASSED
+
+============================== 3 passed in 19.11s ==============================

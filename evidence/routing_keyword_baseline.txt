@@ -1,0 +1,96 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/du_356064-1790187768/bootcamp/unit3-capstone/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/du_356064-1790187768/bootcamp/unit3-capstone
+configfile: pytest.ini
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 9 items
+
+tests/test_routing.py::test_router_picks_correct_route[How many active projects do we have?] 
+  route='sql' (expected 'sql')
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[Which clients have overdue invoices?] 
+  route='sql' (expected 'sql')
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What is the total contract value across all c] 
+  route='both' (expected 'sql')
+FAILED
+tests/test_routing.py::test_router_picks_correct_route[What is the budget for the Fraud Detection Sy] 
+  route='both' (expected 'sql')
+FAILED
+tests/test_routing.py::test_router_picks_correct_route[How much can employees claim for home office ] 
+  route='sql' (expected 'retrieval')
+FAILED
+tests/test_routing.py::test_router_picks_correct_route[What are the core hours in the remote work po] 
+  route='retrieval' (expected 'retrieval')
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What percentage of historical records had bee] 
+  route='retrieval' (expected 'retrieval')
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What are common pitfalls in a cloud data migr] 
+  route='retrieval' (expected 'retrieval')
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[How many active projects do we have, and what] 
+  route='both' (expected 'both')
+PASSED
+
+=================================== FAILURES ===================================
+_ test_router_picks_correct_route[What is the total contract value across all c] _
+
+question = 'What is the total contract value across all clients?'
+expected = 'sql'
+
+    @pytest.mark.parametrize("question, expected", CASES, ids=[c[0][:45] for c in CASES])
+    def test_router_picks_correct_route(question, expected):
+        state = {"question": question, "route": None, "sql_result": None,
+                 "retrieval_result": None, "final_answer": None, "token_usage": None}
+        route = route_question(state)["route"]
+        print(f"\n  route={route!r} (expected {expected!r})")
+>       assert route == expected
+E       AssertionError: assert 'both' == 'sql'
+E         
+E         - sql
+E         + both
+
+tests/test_routing.py:27: AssertionError
+_ test_router_picks_correct_route[What is the budget for the Fraud Detection Sy] _
+
+question = 'What is the budget for the Fraud Detection System project?'
+expected = 'sql'
+
+    @pytest.mark.parametrize("question, expected", CASES, ids=[c[0][:45] for c in CASES])
+    def test_router_picks_correct_route(question, expected):
+        state = {"question": question, "route": None, "sql_result": None,
+                 "retrieval_result": None, "final_answer": None, "token_usage": None}
+        route = route_question(state)["route"]
+        print(f"\n  route={route!r} (expected {expected!r})")
+>       assert route == expected
+E       AssertionError: assert 'both' == 'sql'
+E         
+E         - sql
+E         + both
+
+tests/test_routing.py:27: AssertionError
+_ test_router_picks_correct_route[How much can employees claim for home office ] _
+
+question = 'How much can employees claim for home office equipment?'
+expected = 'retrieval'
+
+    @pytest.mark.parametrize("question, expected", CASES, ids=[c[0][:45] for c in CASES])
+    def test_router_picks_correct_route(question, expected):
+        state = {"question": question, "route": None, "sql_result": None,
+                 "retrieval_result": None, "final_answer": None, "token_usage": None}
+        route = route_question(state)["route"]
+        print(f"\n  route={route!r} (expected {expected!r})")
+>       assert route == expected
+E       AssertionError: assert 'sql' == 'retrieval'
+E         
+E         - retrieval
+E         + sql
+
+tests/test_routing.py:27: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_routing.py::test_router_picks_correct_route[What is the total contract value across all c]
+FAILED tests/test_routing.py::test_router_picks_correct_route[What is the budget for the Fraud Detection Sy]
+FAILED tests/test_routing.py::test_router_picks_correct_route[How much can employees claim for home office ]
+========================= 3 failed, 6 passed in 0.45s ==========================

@@ -1,0 +1,55 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/du_356064-1790187768/bootcamp/unit3-capstone/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/du_356064-1790187768/bootcamp/unit3-capstone
+configfile: pytest.ini
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 15 items
+
+tests/test_routing.py::test_router_picks_correct_route[How many active projects do we have?] 
+  route='sql' (expected 'sql')  tokens in/out 323/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[Which clients have overdue invoices?] 
+  route='sql' (expected 'sql')  tokens in/out 323/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What is the total contract value across all c] 
+  route='sql' (expected 'sql')  tokens in/out 325/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What is the budget for the Fraud Detection Sy] 
+  route='sql' (expected 'sql')  tokens in/out 327/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[How much can employees claim for home office ] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 325/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What are the core hours in the remote work po] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 326/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What percentage of historical records had bee] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 328/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What are common pitfalls in a cloud data migr] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 327/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[How many active projects do we have, and what] 
+  route='both' (expected 'both')  tokens in/out 335/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What's our total billing that is still unpaid] 
+  route='sql' (expected 'sql')  tokens in/out 326/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[Can I expense my internet bill when working f] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 326/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[Which consultant has logged the most billable] 
+  route='sql' (expected 'sql')  tokens in/out 325/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What results did the grocery client see after] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 329/5
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[Which of our projects are on hold, and what d] 
+  route='both' (expected 'both')  tokens in/out 335/4
+PASSED
+tests/test_routing.py::test_router_picks_correct_route[What is the CEO's favourite colour?] 
+  route='retrieval' (expected 'retrieval')  tokens in/out 323/5
+PASSED
+
+============================= 15 passed in 11.92s ==============================
