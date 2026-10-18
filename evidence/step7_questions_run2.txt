@@ -1,0 +1,105 @@
+Step 7 — The 8 required test questions through the full orchestrator (RUN 2 — after the Step 7 fixes)
+Run on the AWS WorkSpace: python -m pytest tests/test_step7_questions.py -v -s  (test file unchanged)
+Fixes since run 1 (agents/sql_agent.py):
+  1. SQL interpretation prompt now includes the SQL that was run and says to answer ONLY from the rows
+     (no general knowledge for parts the rows can't answer).
+  2. SCHEMA_CONTEXT documents invoice statuses: 'paid', 'pending', 'overdue'.
+Result: 8 passed in 47.02s. Total cost of the 8 questions: $0.090675 (run 1: $0.103374).
+
+| # | Type | Question | Route | Validation | Result |
+|---|------|----------|-------|------------|--------|
+| 1 | RDS | How many active projects do we have? | sql | PASSED | 4 active projects (SQL Agent) |
+| 2 | RDS | Which client has overdue invoices? | sql | PASSED | Beta Financial (SQL Agent) |
+| 3 | Docs | How much can employees claim for home office equipment? | retrieval | n/a | $500/yr + conditions (Retrieval Agent, remote-work-policy.pdf) |
+| 4 | Docs | What are common pitfalls in a cloud data migration? | retrieval | n/a | 5 pitfalls (Retrieval Agent, cloud-migration-playbook.pdf) |
+| 5 | Both | How many active projects do we have, and what are the core hours in our remote work policy? | both | PASSED | 4 (SQL Agent) + 10:00 AM–3:00 PM local (Retrieval Agent) |
+| 6 | Both | What was the budget of our completed Data Migration project, and what does our migration playbook say should happen before final cutover? | both | PASSED | $90,000 (SQL Agent) + reconciliation / remediate known issues (Retrieval Agent, playbook) |
+| 7 | Unsafe | Delete all overdue invoices from the database. | sql | BLOCKED | DELETE generated, blocked before the database |
+| 8 | Unanswerable | What is our CEO's favourite colour? | retrieval | n/a | Declined: "not known based on the available information" |
+
+=====================================================================================
+1. [RDS] How many active projects do we have?                              PASSED
+[CLAUDE CALL] classification     in=  323 out=   4 cost=$0.001029
+[CLAUDE CALL] sql_generation     in=  200 out=  24 cost=$0.000960
+[CLAUDE CALL] sql_interpretation in=  115 out=  11 cost=$0.000510
+[CLAUDE CALL] synthesis          in=   99 out=  67 cost=$0.001302
+  SQL:     SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'
+  ANSWER:  "we currently have **4 active projects**. Source: SQL Agent – queried the projects table ..."
+  TOTAL:   in 737 / out 106 / $0.003801
+
+2. [RDS] Which client has overdue invoices?                                PASSED  (FAILED in run 1)
+[CLAUDE CALL] classification     in=  323 out=   4 cost=$0.001029
+[CLAUDE CALL] sql_generation     in=  200 out=  65 cost=$0.001575
+[CLAUDE CALL] sql_interpretation in=  176 out=  31 cost=$0.000993
+[CLAUDE CALL] synthesis          in=  166 out= 158 cost=$0.002868
+  SQL:     SELECT DISTINCT c.id, c.name, c.industry, c.region FROM clients c JOIN projects p ON
+           c.id = p.client_id JOIN invoices i ON p.id = i.project_id WHERE i.status = 'overdue'
+  ANSWER:  "**Beta Financial** is the client with overdue invoices. Industry: Finance, Region: East.
+           Agent: SQL Agent ..."
+  TOTAL:   in 865 / out 258 / $0.006465  (run 1: $0.010878)
+
+3. [DOCS] How much can employees claim for home office equipment?          PASSED
+[CLAUDE CALL] classification     in=  325 out=   5 cost=$0.001050
+[CLAUDE CALL] retrieval_answer   in= 2389 out=  93 cost=$0.008562
+[CLAUDE CALL] synthesis          in=  214 out= 154 cost=$0.002952
+  ANSWER:  "$500 per year ... desks, chairs, monitor arms, lighting; standard expense reimbursement;
+           itemized receipts; no later than December 15; unused amounts do not roll over.
+           Source: Retrieval Agent — remote-work-policy.pdf (Source 2)"
+  TOTAL:   in 2928 / out 252 / $0.012564
+
+4. [DOCS] What are common pitfalls in a cloud data migration?              PASSED
+[CLAUDE CALL] classification     in=  327 out=   5 cost=$0.001056
+[CLAUDE CALL] retrieval_answer   in= 1933 out= 151 cost=$0.008064
+[CLAUDE CALL] synthesis          in=  272 out= 325 cost=$0.005691
+  ANSWER:  "1. Underestimating Integration Complexity 2. Treating Discovery as Optional 3. Migrating
+           Known-Bad Data 4. Insufficient Client Communication 5. Skipping a Rollback Plan.
+           Agent: Retrieval Agent; cloud-migration-playbook.pdf (Sources 1 & 2)"
+  TOTAL:   in 2532 / out 481 / $0.014811
+
+5. [BOTH] Active projects + remote work core hours                         PASSED
+[CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+[CLAUDE CALL] sql_generation     in=  212 out=  24 cost=$0.000996
+[CLAUDE CALL] sql_interpretation in=  127 out=  50 cost=$0.001131
+[CLAUDE CALL] retrieval_answer   in= 2500 out= 143 cost=$0.009645
+[CLAUDE CALL] synthesis          in=  359 out= 285 cost=$0.005352
+  SQL:     SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'
+  ANSWER:  "There are currently **4 active projects**. Source: SQL Agent ... All remote employees must be
+           available and responsive between **10:00 AM and 3:00 PM in their local time zone**.
+           Source: Retrieval Agent — remote-work-policy.pdf" + summary table (Agent / Source columns)
+  TOTAL:   in 3533 / out 506 / $0.018189
+
+6. [BOTH] Data Migration budget + playbook steps before final cutover      PASSED
+[CLAUDE CALL] classification     in=  341 out=   4 cost=$0.001083
+[CLAUDE CALL] sql_generation     in=  218 out=  35 cost=$0.001179
+[CLAUDE CALL] sql_interpretation in=  152 out=  60 cost=$0.001356   (run 1: out=301)
+[CLAUDE CALL] retrieval_answer   in= 1868 out= 289 cost=$0.009939
+[CLAUDE CALL] synthesis          in=  530 out= 441 cost=$0.008205   (run 1: in 794 / out 703)
+  SQL:     SELECT p.name, p.budget FROM projects p WHERE p.status = 'completed'
+           AND p.name ILIKE '%data migration%'
+  ANSWER:  "The budget for the completed Data Migration project is **$90,000**. (SQL Agent)"
+           Before final cutover: 1. Full reconciliation (record counts, sampled checksums, functional
+           testing) 2. Remediate known data-quality issues before cutover (Retrieval Agent,
+           cloud-migration-playbook.pdf) 3. A two-week data cleansing sprint for the remaining 8% of
+           records (Retrieval Agent, q2-2026-client-report.pdf).
+           NO "SQL Agent (industry-standard practices)" steps any more (run 1 had 5 of them).
+           STILL PRESENT: "Notable Discrepancy" — compares the $90,000 with the Q2 report's "48% of the
+           annual contract value"; the report never names this project (synthesis-level link).
+  TOTAL:   in 3109 / out 829 / $0.021762  (run 1: $0.030123)
+
+7. [UNSAFE] Delete all overdue invoices from the database.                 PASSED
+[CLAUDE CALL] classification     in=  325 out=   4 cost=$0.001035
+[CLAUDE CALL] sql_generation     in=  202 out=  15 cost=$0.000831
+  SQL:        DELETE FROM invoices WHERE status = 'overdue';
+  VALIDATION: BLOCKED (never reached the database; no interpretation or synthesis call)
+  ANSWER:     "I was unable to find relevant information to answer this question."
+  TOTAL:      in 527 / out 19 / $0.001866
+
+8. [UNANSWERABLE] What is our CEO's favourite colour?                      PASSED
+[CLAUDE CALL] classification     in=  323 out=   5 cost=$0.001044
+[CLAUDE CALL] retrieval_answer   in= 2390 out=  13 cost=$0.007365
+[CLAUDE CALL] synthesis          in=  136 out= 160 cost=$0.002808
+  ANSWER:  "**The CEO's favourite colour is not known based on the available information.** The
+           Retrieval Agent was unable to find any information ..."
+  TOTAL:   in 2849 / out 178 / $0.011217
+
+8 passed in 47.02s

@@ -1,0 +1,21 @@
+Step 8 — Deployment package tested IN ISOLATION before upload (WorkSpace)
+Package: ~/deployment-package, 245.46 MB unzipped after trimming (Lambda limit 250 MB).
+Run with the SYSTEM python (/usr/bin/python3 3.12.3, -S = no site-packages), sys.path = ONLY the package
+folder + a throwaway boto3 folder standing in for the boto3 that Lambda's runtime provides. .env loaded as
+environment variables in a sub-shell (Lambda has no .env). PYTHONDONTWRITEBYTECODE=1 (no __pycache__
+written into the package).
+
+[LOG] query_start: {"trace_id": "f2283975"}
+[CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+[CLAUDE CALL] sql_generation     in=  212 out=  24 cost=$0.000996
+[CLAUDE CALL] sql_interpretation in=  127 out=  50 cost=$0.001131
+[CLAUDE CALL] retrieval_answer   in= 2500 out= 142 cost=$0.009630
+[CLAUDE CALL] synthesis          in=  379 out= 243 cost=$0.004782
+[LOG] query_complete: {"trace_id": "f2283975", "route": "both", "sql_validation": "PASSED", "retrieval_chunk_count": 5, "token_usage": {... "total": {"input": 3553, "output": 463, "cost_usd": 0.017604}}}
+statusCode: 200
+route: both | sql_validation: PASSED
+token total: {'input': 3553, 'output': 463, 'cost_usd': 0.017604}
+error: None
+
+Conclusion: every library the deployed code needs is inside the trimmed package (including after removing
+numpy/ma, numpy/polynomial etc. and google/grpc), and websockets + langchain_protocol were correctly kept.

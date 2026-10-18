@@ -1,0 +1,72 @@
+GOLD — conversation memory + human-in-the-loop confirmation together, through `aws lambda invoke`
+(2026-10-18). Script: scripts/gold_lambda_demo.sh — each request is built from the previous RESPONSE
+(history and the signed confirm block copied programmatically). Raw request/response JSON files:
+evidence/gold_lambda/ (request1, response1, request2, response2, request_altered, response_altered,
+request3, response3).
+Lambda redeployed first with confirmation.py and the CONFIRMATION_SECRET variable (7 env vars, names
+verified: RDS_HOST OPENSEARCH_ENDPOINT RDS_DATABASE RDS_PASSWORD RDS_PORT RDS_USER CONFIRMATION_SECRET).
+
+=== TURN 1 === statusCode 200   "How many active projects does Acme Corp have?"
+  route: sql | sql_validation: PASSED | needs_confirmation: False
+  sql: SELECT COUNT(*) AS active_project_count FROM projects p JOIN clients c ON p.client_id = c.id
+       WHERE c.name = 'Acme Corp' AND p.status = 'active'
+  answer: "**Acme Corp has 1 active project.**"
+  history length: 1 | token total: {'input': 894, 'output': 160, 'cost_usd': 0.005082}
+
+=== TURN 2 (follow-up) === statusCode 200   "Show me every invoice for their projects, with the project names."
+  route: sql | sql_validation: NEEDS_CONFIRMATION | needs_confirmation: True
+  reason: it joins 3 tables (more than two)
+  sql: SELECT i.id AS invoice_id, p.name AS project_name, i.amount, i.status, i.due_date, i.paid_date
+       FROM invoices i JOIN projects p ON i.project_id = p.id JOIN clients c ON p.client_id = c.id
+       WHERE c.name = 'Acme Corp'
+       ← "their" resolved to Acme Corp from turn 1 (memory); flagged for >2 tables (confirmation)
+  answer: "This query needs your confirmation before it runs, because it joins 3 tables (more than two).
+           Nothing has been executed. SQL: ..."
+  history length: 2 | token total: {'input': 814, 'output': 89, 'cost_usd': 0.003777}
+
+=== ALTERED CONFIRMATION (Acme Corp -> Beta Financial, turn 2's token) === statusCode 403
+  error: Confirmation rejected: the SQL or route does not match the query that was flagged.
+
+=== TURN 3 (exact confirmation) === statusCode 200
+  route: sql | sql_validation: PASSED | needs_confirmation: False
+  sql: (identical to turn 2's flagged query)
+  answer: "Invoices for Acme Corp's Projects — Here are all invoices associated with Acme Corp's projects,
+           as retrieved by the **SQL Agent**: | Invoice ID | Project | Amount | Status | Due Date | Paid Date | ..."
+  history length: 3 | token total: {'input': 746, 'output': 539, 'cost_usd': 0.010323}
+
+Confirmed query identical to flagged query: True
+
+CLOUDWATCH (aws logs tail /aws/lambda/multi-agent-orchestrator --since 10m --format short)
+2026-10-18T21:32:04 INIT_START Runtime Version: python:3.12.mainlinev2.v43
+2026-10-18T21:32:07 START RequestId: ea6538f4-9dd2-4091-a9fd-6671c556f602 Version: $LATEST
+2026-10-18T21:32:07 [LOG] query_start: {"trace_id": "9d16dd7c", "history_turns": 0, "confirmed": false}
+2026-10-18T21:32:08 [CLAUDE CALL] classification     in=  352 out=   4 cost=$0.001116
+2026-10-18T21:32:09 [CLAUDE CALL] sql_generation     in=  234 out=  54 cost=$0.001512
+2026-10-18T21:32:10 [CLAUDE CALL] sql_interpretation in=  148 out=  14 cost=$0.000654
+2026-10-18T21:32:11 [CLAUDE CALL] synthesis          in=  160 out=  88 cost=$0.001800
+2026-10-18T21:32:11 [LOG] query_complete: {"trace_id": "9d16dd7c", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 894, "output": 160, "cost_usd": 0.005082}}
+2026-10-18T21:32:11 REPORT RequestId: ea6538f4-…  Duration: 3900.84 ms  Billed Duration: 7716 ms  Max Memory Used: 214 MB  Init Duration: 3814.33 ms
+2026-10-18T21:32:12 START RequestId: 75448b01-98e8-433d-9d2f-98f1449d0e6a Version: $LATEST
+2026-10-18T21:32:12 [LOG] query_start: {"trace_id": "90c207ef", "history_turns": 1, "confirmed": false}
+2026-10-18T21:32:13 [CLAUDE CALL] classification     in=  466 out=   4 cost=$0.001458
+2026-10-18T21:32:14 [CLAUDE CALL] sql_generation     in=  348 out=  85 cost=$0.002319
+2026-10-18T21:32:14 [LOG] query_complete: {"trace_id": "90c207ef", "route": "sql", "sql_validation": "NEEDS_CONFIRMATION", ... "total": {"input": 814, "output": 89, "cost_usd": 0.003777}}
+2026-10-18T21:32:14 REPORT RequestId: 75448b01-…  Duration: 1759.31 ms  Billed Duration: 1760 ms  Max Memory Used: 214 MB
+2026-10-18T21:32:14 START RequestId: e075affe-ce31-4024-8441-29ee5aa6793a Version: $LATEST
+2026-10-18T21:32:14 END RequestId: e075affe-ce31-4024-8441-29ee5aa6793a
+2026-10-18T21:32:14 REPORT RequestId: e075affe-…  Duration: 2.01 ms  Billed Duration: 3 ms  Max Memory Used: 214 MB
+   ← the ALTERED confirmation: rejected in 2 ms with no [LOG] or [CLAUDE CALL] lines — the handler refused
+     it before the orchestrator, any Claude call, or the database.
+2026-10-18T21:32:15 START RequestId: 8f1ac008-21c0-4485-9eff-df4024886247 Version: $LATEST
+2026-10-18T21:32:15 [LOG] query_start: {"trace_id": "22d95c5b", "history_turns": 2, "confirmed": true}
+2026-10-18T21:32:17 [CLAUDE CALL] sql_interpretation in=  329 out= 236 cost=$0.004527
+2026-10-18T21:32:19 [CLAUDE CALL] synthesis          in=  417 out= 303 cost=$0.005796
+2026-10-18T21:32:19 [LOG] query_complete: {"trace_id": "22d95c5b", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 746, "output": 539, "cost_usd": 0.010323}}
+2026-10-18T21:32:19 REPORT RequestId: 8f1ac008-…  Duration: 4687.07 ms  Billed Duration: 4688 ms  Max Memory Used: 217 MB
+
+PASS CONDITIONS
+  Memory and confirmation coexist: the flagged query reflects context from earlier turns
+    (WHERE c.name = 'Acme Corp' from "their"), and confirming executes exactly that query (identical: True). ✓
+  Both deployed: same behaviour through aws lambda invoke as locally
+    (evidence/stretchB_gold_local_live.txt). ✓
+Extra: the deployed altered-confirmation attempt (switch to Beta Financial with Acme's token) → 403.

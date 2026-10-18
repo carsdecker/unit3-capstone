@@ -1,0 +1,21 @@
+Step 5 — Defence in depth: database-level backstop below the validator
+Run on the AWS WorkSpace: python -m pytest tests/test_db_backstop.py -v -s
+Connection opened with options="-c default_transaction_read_only=on -c statement_timeout=10000".
+validate_sql is monkeypatched OFF in the first two tests, so the DATABASE layer alone is tested.
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0
+configfile: pytest.ini
+collected 3 items
+
+tests/test_db_backstop.py::test_database_refuses_a_write_even_if_the_validator_misses_it
+  -> EXECUTION_ERROR: cannot execute SELECT INTO in a read-only transaction
+PASSED
+tests/test_db_backstop.py::test_database_cancels_a_slow_query
+  -> EXECUTION_ERROR: canceling statement due to statement timeout
+PASSED
+tests/test_db_backstop.py::test_normal_reads_still_work
+  -> PASSED: rows=[(4,)]
+PASSED
+
+============================== 3 passed in 10.30s ==============================

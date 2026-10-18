@@ -1,0 +1,33 @@
+Step 6 — Every Claude call in a multi-tool query is logged (tokens + USD cost)
+Run on the AWS WorkSpace: python -m pytest tests/test_tokenomics.py -v -s
+Question: "How many active projects do we have, and what are the core hours in our remote work policy?"
+Pricing: Claude Sonnet 4.6 on Bedrock, $3.00 / 1M input, $15.00 / 1M output (evidence/bedrock_pricing_2026-10-16.png)
+
+The [CLAUDE CALL] lines are printed by bedrock_client.log_call() — the single choke point every
+Claude call passes through — and also appended to /tmp/claude_calls.jsonl. The test then checks the
+call log against the orchestrator state's token_usage.
+
+tests/test_tokenomics.py::test_multi_tool_query_logs_every_claude_call
+[CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+[CLAUDE CALL] sql_generation     in=  190 out=  24 cost=$0.000930
+[CLAUDE CALL] sql_interpretation in=   53 out=  72 cost=$0.001239
+[CLAUDE CALL] retrieval_answer   in= 2500 out= 141 cost=$0.009615
+[CLAUDE CALL] synthesis          in=  379 out= 343 cost=$0.006282
+
+  route: both
+  component             input  output    cost_usd
+  classification          335       4    0.001065
+  sql_generation          190      24    0.000930
+  sql_interpretation       53      72    0.001239
+  retrieval_answer       2500     141    0.009615
+  synthesis               379     343    0.006282
+  state token_usage total: {'input': 3457, 'output': 584, 'cost_usd': 0.019131}
+PASSED
+
+Assertions passed: route == "both"; exactly 5 calls; components == {classification, sql_generation,
+sql_interpretation, retrieval_answer, synthesis}; every call has input>0, output>0, cost>0; state
+token_usage has those 5 components + total; total input/output/cost == sum of the call log.
+
+Before the Step 6 fixes, the same question's state reported token_usage {'input': 380, 'output': 339}
+(synthesis only — evidence/step4_orchestrator.txt): ~11% of the real input tokens and roughly a third
+of the real cost.

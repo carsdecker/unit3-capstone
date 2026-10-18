@@ -1,0 +1,61 @@
+Stretch Goal A — two-turn exchange through `aws lambda invoke` (deployed, 2026-10-18)
+History from response 1 was extracted programmatically and placed into request 2 (no retyping):
+  evidence/stretchA_request1.json → stretchA_response1.json → stretchA_request2.json → stretchA_response2.json
+
+COMMANDS
+aws lambda invoke --function-name multi-agent-orchestrator --payload file://evidence/stretchA_request1.json \
+  --cli-binary-format raw-in-base64-out --cli-read-timeout 150 evidence/stretchA_response1.json   → StatusCode 200
+python -c "... r1 = json.loads(json.load(open('evidence/stretchA_response1.json'))['body']);
+           req2 = {'body': json.dumps({'question': 'What about their total contract value?', 'history': r1['history']})} ..."
+  → "history passed to turn 2: 1 turn(s)"
+aws lambda invoke ... --payload file://evidence/stretchA_request2.json ... evidence/stretchA_response2.json   → StatusCode 200
+
+SUMMARY OF BOTH RESPONSES
+--- TURN 1: "How many active projects does Acme Corp have?" ---
+route: sql | sql_validation: PASSED | history length: 1
+answer: "**Acme Corp has 1 active project.** Source: SQL Agent — SELECT COUNT(*) AS active_project_count
+         FROM projects p JOIN clients c ON p.client_id = c.id WHERE c.name = 'Acme Corp' AND p.status = 'active'"
+classification in: 352 | sql_generation in: 234 | total: {'input': 894, 'output': 160, 'cost_usd': 0.005082}
+
+--- TURN 2: "What about their total contract value?" (+ history from response 1) ---
+route: sql | sql_validation: PASSED | history length: 2
+answer: "the total contract value for **Acme Corp** is **$250,000**. Source: SQL query —
+         SELECT SUM(c.contract_value) AS total_contract_value FROM clients c WHERE c.name = 'Acme Corp'"
+classification in: 460 | sql_generation in: 342 | total: {'input': 1073, 'output': 139, 'cost_usd': 0.005304}
+
+PASS CONDITION: turn 2 is filtered to Acme Corp ($250,000), not a total across all clients ($1,515,000). ✓
+Same result as the local run (evidence/stretchA_two_turn_local.txt). ✓
+
+CLOUDWATCH (aws logs tail /aws/lambda/multi-agent-orchestrator --since 10m --format short)
+2026-10-18T20:21:56 INIT_START Runtime Version: python:3.12.mainlinev2.v43
+2026-10-18T20:22:00 START RequestId: 228cfc47-f970-479c-a5a4-334571efbd49 Version: $LATEST
+2026-10-18T20:22:00 [LOG] query_start: {"trace_id": "073e96a0", "history_turns": 0}
+2026-10-18T20:22:01 [CLAUDE CALL] classification     in=  352 out=   4 cost=$0.001116
+2026-10-18T20:22:02 [CLAUDE CALL] sql_generation     in=  234 out=  54 cost=$0.001512
+2026-10-18T20:22:03 [CLAUDE CALL] sql_interpretation in=  148 out=  14 cost=$0.000654
+2026-10-18T20:22:04 [CLAUDE CALL] synthesis          in=  160 out=  88 cost=$0.001800
+2026-10-18T20:22:04 [LOG] query_complete: {"trace_id": "073e96a0", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 894, "output": 160, "cost_usd": 0.005082}}
+2026-10-18T20:22:04 END RequestId: 228cfc47-f970-479c-a5a4-334571efbd49
+2026-10-18T20:22:04 REPORT RequestId: 228cfc47-…  Duration: 4031.26 ms  Billed Duration: 7931 ms  Memory Size: 512 MB  Max Memory Used: 214 MB  Init Duration: 3898.87 ms
+2026-10-18T20:22:19 START RequestId: abc844f8-1c3c-42bd-812c-ce57127fae87 Version: $LATEST
+2026-10-18T20:22:19 [LOG] query_start: {"trace_id": "8b6019e6", "history_turns": 1}
+2026-10-18T20:22:20 [CLAUDE CALL] classification     in=  460 out=   4 cost=$0.001440
+2026-10-18T20:22:20 [CLAUDE CALL] sql_generation     in=  342 out=  36 cost=$0.001566
+2026-10-18T20:22:21 [CLAUDE CALL] sql_interpretation in=  130 out=  21 cost=$0.000705
+2026-10-18T20:22:22 [CLAUDE CALL] synthesis          in=  141 out=  78 cost=$0.001593
+2026-10-18T20:22:22 [LOG] query_complete: {"trace_id": "8b6019e6", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 1073, "output": 139, "cost_usd": 0.005304}}
+2026-10-18T20:22:22 END RequestId: abc844f8-1c3c-42bd-812c-ce57127fae87
+2026-10-18T20:22:22 REPORT RequestId: abc844f8-…  Duration: 3606.36 ms  Billed Duration: 3607 ms  Memory Size: 512 MB  Max Memory Used: 217 MB
+
+"history_turns": 0 then "history_turns": 1 — the deployed function received the history the caller sent.
+
+COST IMPACT (deployed, turn 1 vs turn 2)
+- classification input 352 → 460 (+108), sql_generation input 234 → 342 (+108): +216 input tokens on turn 2.
+  (This also includes the two questions' different lengths; the clean, same-question comparison from the
+  local control run is +133 per component = +266 — evidence/stretchA_two_turn_local.txt.)
+- Turn totals: $0.005082 → $0.005304 (+$0.000222, +4%).
+
+OTHER OBSERVATIONS
+- Turn 1 was a cold start (Init 3.9 s); turn 2 reused the warm environment (no Init, 3.6 s billed).
+- SQL-only requests used ~215 MB, vs 450 MB for the earlier "both" request: onnx_embed loads the 87 MB
+  model lazily, only when the retrieval agent runs.

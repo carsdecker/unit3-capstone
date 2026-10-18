@@ -1,0 +1,35 @@
+Stretch Goal A — conversation memory plumbing (FREE tests, Claude faked)
+Run on the AWS WorkSpace: python -m pytest tests/test_memory.py -v -s
+Cap (conversation.py): MAX_TURNS = 3, MAX_ANSWER_CHARS = 400.
+
+tests/test_memory.py::test_only_the_last_turns_are_kept PASSED
+tests/test_memory.py::test_long_answers_are_cut PASSED
+tests/test_memory.py::test_malformed_history_is_ignored_not_crashing PASSED
+tests/test_memory.py::test_sql_generation_prompt_includes_history
+  SQL generation prompt (start):
+
+Tables available:
+- clients(id, name, industry, region, contract_value, created_date)
+- projects(id, client_id, name, status, start_date, end_date, budget)
+- consultants(id, name, grade, specialisation, project_id, billable_hours)
+- invoices(id, project_id, amount, status, due_date, paid_date)
+
+All monetary values are in USD. Dates are in ISO 8601 format.
+status in projects is one of: 'active', 'completed', 'on-hold'.
+status in invoices is one of: 'paid', 'pending', 'overdue'.
+
+
+Conversation so far (most recent last):
+User: How many active projects does Acme Corp have?
+Assistant: Acme Corp ha
+PASSED
+tests/test_memory.py::test_classifier_prompt_includes_history PASSED
+tests/test_memory.py::test_without_history_the_prompts_are_unchanged PASSED
+tests/test_memory.py::test_only_capped_turns_reach_the_prompt PASSED
+
+7 passed in 0.67s
+
+Proves: the cap keeps only the last 3 turns and cuts answers at 400 chars; malformed caller-supplied
+history is dropped, not crashing; history reaches BOTH the classification prompt and the SQL-generation
+prompt (brief step 2); with no history the prompts are unchanged (memory costs nothing when unused);
+the cap applies to the real prompt.

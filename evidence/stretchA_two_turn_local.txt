@@ -1,0 +1,63 @@
+Stretch Goal A — the brief's two-turn exchange, run locally through the full orchestrator
+Run on the AWS WorkSpace: python -m pytest tests/test_memory_live.py -v -s
+Cap: last 3 turns, answers cut to 400 characters (conversation.py).
+Answer key: Acme Corp → 1 active project; contract value $250,000. All clients total = $1,515,000.
+
+[CLAUDE CALL] classification     in=  352 out=   4 cost=$0.001116
+[CLAUDE CALL] sql_generation     in=  234 out=  54 cost=$0.001512
+[CLAUDE CALL] sql_interpretation in=  148 out=  14 cost=$0.000654
+[CLAUDE CALL] synthesis          in=  160 out= 109 cost=$0.002115
+
+  --- TURN 1: "How many active projects does Acme Corp have?" ---
+  route: sql | SQL: SELECT COUNT(*) AS active_project_count FROM projects p JOIN clients c
+                    ON p.client_id = c.id WHERE c.name = 'Acme Corp' AND p.status = 'active'
+  answer: "**Acme Corp has 1 active project.** Source: SQL Agent ..."
+  classification input tokens: 352
+  sql_generation input tokens: 234
+  total: {'input': 894, 'output': 181, 'cost_usd': 0.005397}
+
+[CLAUDE CALL] classification     in=  348 out=   4 cost=$0.001104
+[CLAUDE CALL] sql_generation     in=  230 out=  71 cost=$0.001755
+
+  --- TURN 2 WITHOUT MEMORY (control): "What about their total contract value?" ---
+  route: sql | "SQL": "I need more context to resolve what "their" refers to. Based on a typical
+         conversation flow, I'll assume this refers to clients, possibly filtered by a previous
+         condition. Without more context, I'll provide the total contract value for all clients:
+         SELECT SUM(contract_value) AS total_contract_value FROM clients"
+  answer: "The database part of this request was blocked: this system only runs read-only queries, so
+           the generated SQL was not executed."
+  classification input tokens: 348
+  sql_generation input tokens: 230
+  total: {'input': 578, 'output': 75, 'cost_usd': 0.002859}
+  → Without memory, Claude couldn't resolve "their" and fell back to ALL clients (the $1,515,000 total),
+    wrapped in prose. The validator blocked it (text doesn't start with SELECT) — so it was never run,
+    but the user-facing message wrongly implies a write was attempted (see finding below).
+
+[CLAUDE CALL] classification     in=  481 out=   4 cost=$0.001503
+[CLAUDE CALL] sql_generation     in=  363 out=  34 cost=$0.001599
+[CLAUDE CALL] sql_interpretation in=  128 out=  21 cost=$0.000699
+[CLAUDE CALL] synthesis          in=  132 out=  78 cost=$0.001566
+
+  --- TURN 2 WITH MEMORY: "What about their total contract value?" + history [turn 1] ---
+  route: sql | SQL: SELECT SUM(c.contract_value) AS total_contract_value FROM clients c
+                    WHERE c.name = 'Acme Corp'
+  answer: "the total contract value for **Acme Corp** is **$250,000**. Source: SQL Agent ..."
+  classification input tokens: 481
+  sql_generation input tokens: 363
+  total: {'input': 1104, 'output': 137, 'cost_usd': 0.005367}
+
+  memory added to classification: +133 input tokens
+  memory added to sql_generation: +133 input tokens
+PASSED   (1 passed in 11.66s)
+
+COST IMPACT (brief: "state how much memory added to input tokens")
+- Same question with vs without memory: +133 input tokens to classification and +133 to SQL generation
+  = +266 input tokens per follow-up turn (one replayed turn) ≈ $0.0008 at $3.00/1M input.
+- Turn 1 vs turn 2 (with memory) totals: input 894 → 1,104; cost $0.005397 → $0.005367 (turn 2's
+  answer was shorter, so output fell while input rose).
+- At the cap (3 turns × up to 400 answer chars + questions), the replay is bounded at roughly 3× this
+  per prompt (~400 tokens each to classification and SQL generation ≈ $0.0024 per question).
+
+FINDING: the control exposed an inaccurate message from the Step 7 "blocked" fix — it assumes every
+validator block is a destructive request ("only runs read-only queries"), but here the block was because
+Claude returned prose, not SQL. → message to use the validator's actual reason.

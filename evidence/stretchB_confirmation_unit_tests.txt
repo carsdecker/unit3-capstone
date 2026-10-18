@@ -1,0 +1,22 @@
+Stretch Goal B — "unusual" criteria + signed confirmation tokens (FREE tests)
+Run on the AWS WorkSpace: python -m pytest tests/test_confirmation.py -v -s   → 13 passed in 0.02s
+
+CRITERIA (confirmation.unusual_reason, documented in the file):
+  - joins more than two tables (the brief's own example)
+  - returns rows from a whole table: no WHERE, no LIMIT and no aggregate (a full table dump)
+  Limitation: only explicit JOINs are counted, not comma-style "FROM a, b".
+
+FLAGGED (needs confirmation):
+  SELECT * FROM invoices                       -> it returns rows from a whole table: no WHERE, no LIMIT and no aggregate
+  SELECT name, region FROM clients             -> it returns rows from a whole table: no WHERE, no LIMIT and no aggregate
+  SELECT c.name FROM clients c JOIN projects p ... JOIN invoices i ... WHERE i.status = 'overdue'
+                                               -> it joins 3 tables (more than two)
+NOT FLAGGED (routine): COUNT(*) ... WHERE; SUM(contract_value) over all clients (aggregate = one row);
+  SELECT * ... LIMIT 5; SELECT ... WHERE region = 'North'; a 2-table join filtered to Acme Corp.
+
+TOKENS (HMAC-SHA256 over {"sql", "route"} with CONFIRMATION_SECRET):
+  test_token_verifies_for_the_exact_query       PASSED
+  test_token_rejects_an_altered_query           PASSED  (different table; AND the same SQL + one space)
+  test_token_rejects_an_altered_route           PASSED
+  test_missing_or_garbage_token_is_rejected     PASSED
+  test_without_a_secret_nothing_can_be_signed   PASSED  (fails closed: RuntimeError)

@@ -1,0 +1,51 @@
+Step 8 — Orchestrator deployed to AWS Lambda and invoked (2026-10-18)
+Function: multi-agent-orchestrator | runtime python3.12 | handler lambda_handler.handler | 512 MB | timeout 120 s
+Role: orchestrator-lambda-role-cdecker (AWSLambdaBasicExecutionRole + inline bedrock:InvokeModel;
+      listed in the OpenSearch domain access policy)
+Code: s3://lambda-deploy-798555098734-cdecker/orchestrator_function.zip (132 MB zip, 245.46 MB unzipped)
+Environment variables: OPENSEARCH_ENDPOINT, RDS_HOST, RDS_PORT, RDS_DATABASE, RDS_USER, RDS_PASSWORD
+                       (read from .env in a sub-shell, never typed on the command line)
+
+---------------------------------------------------------------------------------------------------
+REQUEST (test_both.json)
+{"body": "{\"question\": \"How many active projects do we have, and what are the core hours in our remote work policy?\"}"}
+
+COMMAND
+aws lambda invoke --function-name multi-agent-orchestrator --payload file://test_both.json \
+  --cli-binary-format raw-in-base64-out --cli-read-timeout 150 response.json
+→ {"StatusCode": 200, "ExecutedVersion": "$LATEST"}
+
+---------------------------------------------------------------------------------------------------
+response.json (verbatim)
+{"statusCode": 200, "body": "{\"answer\": \"## Answer\\n\\nThese two pieces of information come from **separate sources** and are presented independently below:\\n\\n---\\n\\n### Active Projects\\n**There are 4 active projects.**\\n\\n- Source: **SQL Agent**, querying the projects database (`SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'`)\\n\\n---\\n\\n### Core Hours in Remote Work Policy\\n**Core hours are 10:00 AM \\u2013 3:00 PM (local time zone).** All remote employees must be available and responsive during this window.\\n\\n- Source: **Retrieval Agent**, from `remote-work-policy.pdf`\\n\\n---\\n\\n> **Note:** These two facts were retrieved independently from different sources (the database and the PDF document). Neither source establishes a connection between them, so they are presented separately.\", \"route\": \"both\", \"sql_validation\": \"PASSED\", \"token_usage\": {\"classification\": {\"input\": 335, \"output\": 4, \"cost_usd\": 0.001065}, \"sql_generation\": {\"input\": 212, \"output\": 24, \"cost_usd\": 0.0009960000000000001}, \"sql_interpretation\": {\"input\": 127, \"output\": 50, \"cost_usd\": 0.001131}, \"retrieval_answer\": {\"input\": 2500, \"output\": 148, \"cost_usd\": 0.00972}, \"synthesis\": {\"input\": 385, \"output\": 178, \"cost_usd\": 0.0038249999999999994}, \"total\": {\"input\": 3559, \"output\": 404, \"cost_usd\": 0.016737}}}"}
+
+PASS CONDITIONS
+  "route": "both"                                   ✓
+  "sql_validation": "PASSED"                        ✓
+  answer combines both sources with attribution     ✓ (4 active projects — SQL Agent; 10:00 AM–3:00 PM —
+                                                       Retrieval Agent, remote-work-policy.pdf)
+  non-zero token_usage                              ✓ total input 3559 / output 404 / $0.016737
+
+---------------------------------------------------------------------------------------------------
+CloudWatch log lines (aws logs tail /aws/lambda/multi-agent-orchestrator --since 15m --format short)
+2026-10-18T19:31:51 INIT_START Runtime Version: python:3.12.mainlinev2.v43      Runtime Version ARN: arn:aws:lambda:us-east-1::runtime:36aeb19f3326e129d9f096dea0a3c6a9ca8dce2610e62d2b2060747602d863ae
+2026-10-18T19:31:55 2026-10-18 19:31:55.331916105 [W:onnxruntime:Default, telemetry_1ds.cc:600 operator()] Failed to persist telemetry device ID; using an in-memory identifier
+2026-10-18T19:31:55 START RequestId: 14263745-caa3-4378-bed3-336da7292f0b Version: $LATEST
+2026-10-18T19:31:55 [LOG] query_start: {"trace_id": "787ca100"}
+2026-10-18T19:31:56 [CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+2026-10-18T19:31:57 [CLAUDE CALL] sql_generation     in=  212 out=  24 cost=$0.000996
+2026-10-18T19:31:58 [CLAUDE CALL] sql_interpretation in=  127 out=  50 cost=$0.001131
+2026-10-18T19:32:06 [CLAUDE CALL] retrieval_answer   in= 2500 out= 148 cost=$0.009720
+2026-10-18T19:32:09 [CLAUDE CALL] synthesis          in=  385 out= 178 cost=$0.003825
+2026-10-18T19:32:09 [LOG] query_complete: {"trace_id": "787ca100", "route": "both", "sql_validation": "PASSED", "retrieval_chunk_count": 5, "token_usage": {"classification": {"input": 335, "output": 4, "cost_usd": 0.001065}, "sql_generation": {"input": 212, "output": 24, "cost_usd": 0.0009960000000000001}, "sql_interpretation": {"input": 127, "output": 50, "cost_usd": 0.001131}, "retrieval_answer": {"input": 2500, "output": 148, "cost_usd": 0.00972}, "synthesis": {"input": 385, "output": 178, "cost_usd": 0.0038249999999999994}, "total": {"input": 3559, "output": 404, "cost_usd": 0.016737}}}
+2026-10-18T19:32:09 END RequestId: 14263745-caa3-4378-bed3-336da7292f0b
+2026-10-18T19:32:09 REPORT RequestId: 14263745-caa3-4378-bed3-336da7292f0b      Duration: 13787.58 ms   Billed Duration: 17588 ms       Memory Size: 512 MB     Max Memory Used: 450 MB  Init Duration: 3799.87 ms
+
+NOTES
+- The trace_id 787ca100 links the response to its log lines; the token_usage in response.json and in the
+  query_complete log line are identical, and match the five [CLAUDE CALL] lines.
+- Cold start: Init 3.8 s (loading libraries + the 87 MB ONNX model) + 13.8 s request = 17.6 s billed.
+  retrieval_answer step took ~8 s (19:31:58 → 19:32:06: embedding + OpenSearch search + Claude call).
+- Max memory 450 MB of 512 MB (88%) — little headroom.
+- The onnxruntime telemetry warning is harmless: Lambda's code folder is read-only, so it keeps the ID in
+  memory instead.

@@ -1,0 +1,64 @@
+Stretch Goal B + Gold combined test — REAL Claude, locally through lambda_handler
+Run on the AWS WorkSpace: python -m pytest tests/test_confirmation_live.py -v -s   → 3 passed in 20.77s
+(handler now also returns "sql" = the SQL that ran or was flagged, so exact execution can be checked)
+
+=== STRETCH B: "Show me all invoices." ===
+[CLAUDE CALL] classification     in=  347 out=   4 cost=$0.001101
+[CLAUDE CALL] sql_generation     in=  229 out=   8 cost=$0.000807
+  --- FLAGGED --- status 200
+  sql_validation: NEEDS_CONFIRMATION | needs_confirmation: True
+  reason: it returns rows from a whole table: no WHERE, no LIMIT and no aggregate
+  sql: SELECT * FROM invoices
+  answer: "This query needs your confirmation before it runs, because it returns rows from a whole table: no
+           WHERE, no LIMIT and no aggregate. Nothing has been executed. SQL: SELECT * FROM invoices"
+  token total: {'input': 576, 'output': 12, 'cost_usd': 0.001908}   (2 calls; no interpretation/synthesis)
+
+  --- ALTERED CONFIRMATION (sql + " WHERE 1=1", original token) --- status 403
+  error: Confirmation rejected: the SQL or route does not match the query that was flagged.
+
+  [LOG] query_start: {"trace_id": "b70bef9c", "history_turns": 0, "confirmed": true}
+[CLAUDE CALL] sql_interpretation in=  366 out= 381 cost=$0.006813
+[CLAUDE CALL] synthesis          in=  465 out= 430 cost=$0.007845
+  --- EXACT CONFIRMATION --- status 200
+  sql_validation: PASSED | needs_confirmation: False
+  sql: SELECT * FROM invoices              ← identical to the flagged query
+  answer: "Here are all **7 invoices** on record: | ID | Project ID | Amount | Status | ..."
+  token total: {'input': 831, 'output': 811, 'cost_usd': 0.014658}   (no classification / generation)
+
+=== STRETCH B: routine question ===
+[CLAUDE CALL] classification 349/4 | sql_generation 231/22 | sql_interpretation 113/11 | synthesis 111/53
+  --- ROUTINE --- sql_validation: PASSED | needs_confirmation: False
+  sql: SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'
+  answer: "We currently have **4 active projects**."   total $0.003762
+
+=== GOLD: memory + confirmation coexist ===
+  --- TURN 1: "How many active projects does Acme Corp have?" ---  [history_turns 0]
+  sql: SELECT COUNT(*) ... FROM projects p JOIN clients c ON p.client_id = c.id
+       WHERE c.name = 'Acme Corp' AND p.status = 'active'          (2 tables → routine)
+  answer: "Acme Corp has **1 active project**."   total $0.004662
+
+  --- TURN 2: "Show me every invoice for their projects, with the project names." + history ---  [history_turns 1]
+[CLAUDE CALL] classification     in=  438 out=   4 cost=$0.001374
+[CLAUDE CALL] sql_generation     in=  320 out=  97 cost=$0.002415
+  sql_validation: NEEDS_CONFIRMATION | needs_confirmation: True
+  reason: it joins 3 tables (more than two)
+  sql: SELECT i.id AS invoice_id, p.name AS project_name, i.amount, i.status, i.due_date, i.paid_date
+       FROM invoices i JOIN projects p ON i.project_id = p.id JOIN clients c ON p.client_id = c.id
+       WHERE c.name = 'Acme Corp' ORDER BY p.name, i.due_date
+       ← "their" resolved to Acme Corp from turn 1 (memory) AND flagged (confirmation)
+  total $0.003789
+
+  --- TURN 3: same question + history + confirm block from turn 2 ---  [history_turns 2, confirmed true]
+[CLAUDE CALL] sql_interpretation in=  341 out= 264 cost=$0.004983
+[CLAUDE CALL] synthesis          in=  459 out= 319 cost=$0.006162
+  sql_validation: PASSED | needs_confirmation: False
+  sql: (identical to turn 2's flagged query)
+  answer: "Invoices for Acme Corp's Projects ... Client Portal Redesign | 1 | $45,000 | Paid | ..."
+  total $0.011145
+
+PASS: flagged query reflects context resolved from earlier turns (WHERE c.name = 'Acme Corp'); confirming
+executed exactly that query (asserted t3.sql == t2.sql).
+
+OBSERVATION: confirming a whole-table dump ("all invoices") produced the most expensive answer step seen
+in this project (interpretation 381 + synthesis 430 output tokens = $0.0147) — the confirmation pause also
+acts as a cost checkpoint before large result sets are summarised.

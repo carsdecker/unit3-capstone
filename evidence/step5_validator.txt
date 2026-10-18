@@ -1,0 +1,45 @@
+Step 5 — SQL validator test suite: AFTER adding "INTO" to BLOCKED_KEYWORDS
+Run on the AWS WorkSpace: python -m pytest tests/test_validator.py -v -s
+Brief's required cases: test_1 .. test_5 (all pass). Plus edge cases and attack cases.
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0
+configfile: pytest.ini
+collected 14 items
+
+tests/test_validator.py::test_1_valid_select_is_allowed PASSED
+tests/test_validator.py::test_2_destructive_statement_is_blocked[DROP TABLE clients]
+  'DROP TABLE clients' -> Blocked: 'DROP' is not permitted.
+PASSED
+tests/test_validator.py::test_2_destructive_statement_is_blocked[DELETE FROM invoices]
+  'DELETE FROM invoices' -> Blocked: 'DELETE' is not permitted.
+PASSED
+tests/test_validator.py::test_2_destructive_statement_is_blocked[UPDATE clients SET contract_value = 0]
+  'UPDATE clients SET contract_value = 0' -> Blocked: 'UPDATE' is not permitted.
+PASSED
+tests/test_validator.py::test_2_destructive_statement_is_blocked[INSERT INTO clients (name) VALUES ('x')]
+  "INSERT INTO clients (name) VALUES ('x')" -> Blocked: 'INSERT' is not permitted.
+PASSED
+tests/test_validator.py::test_3_column_containing_blocked_word_is_allowed PASSED
+tests/test_validator.py::test_4_stacked_query_with_blocked_keyword_is_blocked
+  -> Blocked: 'DROP' is not permitted.
+PASSED
+tests/test_validator.py::test_5_stacked_query_without_blocked_keyword_is_blocked_by_stacking_check
+  -> Blocked: multiple statements detected.
+PASSED
+tests/test_validator.py::test_single_trailing_semicolon_is_allowed PASSED
+tests/test_validator.py::test_lowercase_destructive_statement_is_blocked PASSED
+tests/test_validator.py::test_select_into_is_blocked
+  -> valid=False (Blocked: 'INTO' is not permitted.)
+PASSED
+tests/test_validator.py::test_cte_hiding_a_delete_is_blocked
+  -> valid=False (Only SELECT queries are permitted.)
+PASSED
+tests/test_validator.py::test_comment_hiding_a_second_statement_is_blocked
+  -> valid=False (Blocked: 'DROP' is not permitted.)
+PASSED
+tests/test_validator.py::test_semicolon_inside_a_text_value_is_a_known_false_positive
+  -> valid=False (Blocked: multiple statements detected.)
+PASSED
+
+============================== 14 passed in 0.12s ==============================

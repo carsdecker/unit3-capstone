@@ -1,0 +1,27 @@
+Step 8 — lambda_handler checked LOCALLY on the WorkSpace before deploying (course advice)
+Run: python -m pytest tests/test_lambda_handler.py -v -s
+The assertions mirror Step 8's pass conditions for the real `aws lambda invoke`.
+
+tests/test_lambda_handler.py::test_missing_question_returns_400
+  {'statusCode': 400, 'body': '{"error": "question is required"}'}
+PASSED
+tests/test_lambda_handler.py::test_both_question_meets_step8_pass_conditions
+[LOG] query_start: {"trace_id": "785785aa"}
+[CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+[CLAUDE CALL] sql_generation     in=  212 out=  24 cost=$0.000996
+[CLAUDE CALL] sql_interpretation in=  127 out=  50 cost=$0.001131
+[CLAUDE CALL] retrieval_answer   in= 2500 out= 145 cost=$0.009675
+[CLAUDE CALL] synthesis          in=  382 out= 171 cost=$0.003711
+[LOG] query_complete: {"trace_id": "785785aa", "route": "both", "sql_validation": "PASSED", "retrieval_chunk_count": 5, "token_usage": {... "total": {"input": 3556, "output": 394, "cost_usd": 0.016578}}}
+
+  statusCode: 200
+  route: both | sql_validation: PASSED
+  token_usage total: {'input': 3556, 'output': 394, 'cost_usd': 0.016578}
+  answer: "### Number of Active Projects — **There are 4 active projects.** (Source: SQL Agent, querying
+  the projects table with WHERE status = 'active') ... ### Core Hours in the Remote Work Policy — **All
+  remote employees must be available and responsive between 10:00 AM and 3:00 PM in their local time
+  zone.** (Source: Retrieval Agent, from remote-work-policy.pdf) ... These two facts are being presented
+  separately, as no source explicitly connects [them]."
+PASSED
+
+2 passed in 8.84s

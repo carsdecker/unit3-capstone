@@ -1,0 +1,44 @@
+Step 6 — 10-query cost summary through the full orchestrator
+Run on the AWS WorkSpace: python cost_summary.py
+Each query runs through tokenomics_logger.run_traced_query (the same path lambda_handler.py uses).
+Pricing: Claude Sonnet 4.6 on Bedrock, $3.00 / 1M input, $15.00 / 1M output.
+
+====================================================================================================
+PER QUERY
+#  route        input  output   cost_usd  question
+1  sql            747      89   0.003576  How many active projects do we have?
+2  sql            839     137   0.004572  Which client has overdue invoices?
+3  retrieval     2953     252   0.012639  How much can employees claim for home office equipment?
+4  retrieval     2553     475   0.014784  What are common pitfalls in a cloud data migration?
+5  both          3542     490   0.017976  How many active projects do we have, and what are the core h
+6  both          3155     864   0.022425  What was the budget of our completed Data Migration project,
+7  sql            527      19   0.001866  Delete all overdue invoices from the database.
+8  retrieval     2870     145   0.010785  What is our CEO's favourite colour?
+9  sql            794     121   0.004197  Which consultant has logged the most billable hours?
+10 retrieval     3055     455   0.015990  What results did the grocery client see after the forecastin
+
+PER COMPONENT
+component            calls   input  output  tokens   cost_usd  % cost
+retrieval_answer         6   13489     873   14362   0.053562     49%
+synthesis                9    2363    1791    4154   0.033954     31%
+classification          10    3276      44    3320   0.010488     10%
+sql_generation           6    1234     179    1413   0.006387      6%
+sql_interpretation       5     673     160     833   0.004419      4%
+
+Queries: 10 | Total tokens: 24,082 | TOTAL COST: $0.108810
+Average per query: $0.010881 (~$10.88 per 1,000 queries)
+Most tokens: retrieval_answer | Most cost: retrieval_answer
+
+----------------------------------------------------------------------------------------------------
+Analysis (calculated from the tables above):
+- retrieval_answer used the most tokens (14,362 of 24,082 = 60%) and the most cost (49%). Almost all
+  of it is INPUT (13,489): every retrieval call sends the top 5 of the index's 8 chunks (~1,900–2,500
+  tokens), most of them unrelated to the question.
+- synthesis is 31% of cost but only 17% of tokens: it produced 1,791 of the 3,047 output tokens (59%),
+  and output costs 5x input. It also runs on single-tool queries, where it only reformats a finished
+  answer: synthesis on the 7 single-tool queries (1,2,3,4,8,9,10) cost $0.020154 = 18.5% of the total.
+- classification is 10% (10 calls x ~330 input tokens of registry descriptions; ~4 output each).
+- Query cost by route: sql $0.0036–0.0046, retrieval $0.0108–0.0160, both $0.0180–0.0224.
+  The blocked unsafe query was the cheapest ($0.001866): 2 calls, then stopped.
+- Cost-reduction candidates (not implemented): fewer retrieved chunks (top_k), skipping the synthesis
+  call when only one agent ran, shorter synthesis output.

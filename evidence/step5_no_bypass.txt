@@ -1,0 +1,21 @@
+Step 5 — No path to the database skips the validator
+Run on the AWS WorkSpace: python -m pytest tests/test_no_bypass.py -v -s
+psycopg2.connect is replaced by a tripwire that fails the test if any code reaches the database;
+Claude is faked (free). The third test parses the agent/orchestrator source with `ast`.
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0
+configfile: pytest.ini
+collected 3 items
+
+tests/test_no_bypass.py::test_execute_query_safely_validates_before_connecting
+  -> BLOCKED: Blocked: 'DROP' is not permitted.
+PASSED
+tests/test_no_bypass.py::test_full_sql_agent_path_blocks_before_the_database
+  -> success=False validation=BLOCKED
+PASSED
+tests/test_no_bypass.py::test_only_one_database_connection_exists_in_the_agent_code
+  psycopg2.connect found in: ['agents/sql_agent.py:execute_query_safely']
+PASSED
+
+============================== 3 passed in 0.13s ===============================

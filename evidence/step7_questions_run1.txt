@@ -1,0 +1,130 @@
+Step 7 — The 8 required test questions through the full orchestrator (RUN 1)
+Run on the AWS WorkSpace: python -m pytest tests/test_step7_questions.py -v -s
+Result: 1 failed, 7 passed in 53.31s. Total cost of the 8 questions: $0.103374.
+
+=====================================================================================
+1. [RDS] How many active projects do we have?                              PASSED
+[CLAUDE CALL] classification     in=  323 out=   4 cost=$0.001029
+[CLAUDE CALL] sql_generation     in=  178 out=  24 cost=$0.000894
+[CLAUDE CALL] sql_interpretation in=   41 out=  11 cost=$0.000288
+[CLAUDE CALL] synthesis          in=   99 out=  52 cost=$0.001077
+  ROUTE:      sql
+  VALIDATION: PASSED
+  SQL:        SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'
+  ANSWER:     We currently have **4 active projects**. Source: SQL Agent — Query: SELECT COUNT(*) ...
+  TOTAL:      in 641 / out 91 / $0.003288
+
+=====================================================================================
+2. [RDS] Which client has overdue invoices?                                FAILED
+[CLAUDE CALL] classification     in=  323 out=   4 cost=$0.001029
+[CLAUDE CALL] sql_generation     in=  178 out=  76 cost=$0.001674
+[CLAUDE CALL] sql_interpretation in=  116 out= 102 cost=$0.001878
+[CLAUDE CALL] synthesis          in=  249 out= 370 cost=$0.006297
+  ROUTE:      sql
+  VALIDATION: PASSED
+  SQL:        SELECT DISTINCT c.id, c.name, c.industry, c.region
+              FROM clients c JOIN projects p ON c.id = p.client_id
+              JOIN invoices i ON p.id = i.project_id
+              WHERE i.status != 'paid' AND i.due_date < CURRENT_DATE
+  ANSWER:     "**The question cannot be definitively answered** based on the information currently
+              available. ... the query **only returned client-level fields** (id, name, industry,
+              region) and **did not return any invoice data** such as payment status or due dates.
+              As a result, no overdue invoices or associated clients could be identified. ...
+              Recommendation: Re-run the query to ensure data is being returned, or verify that the
+              invoices table is populated with the relevant fields."
+  TOTAL:      in 866 / out 552 / $0.010878
+  FAILURE:    AssertionError: missing expected fact: Beta Financial
+
+=====================================================================================
+3. [DOCS] How much can employees claim for home office equipment?          PASSED
+[CLAUDE CALL] classification     in=  325 out=   5 cost=$0.001050
+[CLAUDE CALL] retrieval_answer   in= 2389 out=  93 cost=$0.008562
+[CLAUDE CALL] synthesis          in=  214 out= 152 cost=$0.002922
+  ROUTE:      retrieval
+  VALIDATION: n/a (SQL agent did not run)
+  ANSWER:     employees can claim up to **$500 per year** ... desks, chairs, monitor arms, lighting;
+              standard expense reimbursement; itemized receipts; no later than December 15; unused
+              amounts do not roll over. Source: Retrieval Agent — remote-work-policy.pdf (Source 2)
+  TOTAL:      in 2928 / out 250 / $0.012534
+
+=====================================================================================
+4. [DOCS] What are common pitfalls in a cloud data migration?              PASSED
+[CLAUDE CALL] classification     in=  327 out=   5 cost=$0.001056
+[CLAUDE CALL] retrieval_answer   in= 1933 out= 151 cost=$0.008064
+[CLAUDE CALL] synthesis          in=  272 out= 323 cost=$0.005661
+  ROUTE:      retrieval
+  VALIDATION: n/a (SQL agent did not run)
+  ANSWER:     1. Underestimating Integration Complexity 2. Treating Discovery as Optional
+              3. Migrating Known-Bad Data As-Is 4. Insufficient Client Communication
+              5. Skipping a Rollback Plan. Agent: Retrieval Agent; cloud-migration-playbook.pdf
+              (Sources 1 & 2)
+  TOTAL:      in 2532 / out 479 / $0.014781
+
+=====================================================================================
+5. [BOTH] How many active projects do we have, and what are the core hours in our remote work
+   policy?                                                                 PASSED
+[CLAUDE CALL] classification     in=  335 out=   4 cost=$0.001065
+[CLAUDE CALL] sql_generation     in=  190 out=  24 cost=$0.000930
+[CLAUDE CALL] sql_interpretation in=   53 out=  74 cost=$0.001269
+[CLAUDE CALL] retrieval_answer   in= 2500 out= 143 cost=$0.009645
+[CLAUDE CALL] synthesis          in=  383 out= 311 cost=$0.005814
+  ROUTE:      both
+  VALIDATION: PASSED
+  SQL:        SELECT COUNT(*) AS active_project_count FROM projects WHERE status = 'active'
+  ANSWER:     Active Projects: **4** (Source: SQL Agent, query shown) / Remote Work Core Hours:
+              **10:00 AM – 3:00 PM (Local Time Zone)** (Source: Retrieval Agent,
+              remote-work-policy.pdf) + summary table attributing each.
+  TOTAL:      in 3461 / out 556 / $0.018723
+
+=====================================================================================
+6. [BOTH] What was the budget of our completed Data Migration project, and what does our migration
+   playbook say should happen before final cutover?                       PASSED (but see notes)
+[CLAUDE CALL] classification     in=  341 out=   4 cost=$0.001083
+[CLAUDE CALL] sql_generation     in=  196 out=  35 cost=$0.001113
+[CLAUDE CALL] sql_interpretation in=   67 out= 301 cost=$0.004716
+[CLAUDE CALL] retrieval_answer   in= 1868 out= 312 cost=$0.010284
+[CLAUDE CALL] synthesis          in=  794 out= 703 cost=$0.012927
+  ROUTE:      both
+  VALIDATION: PASSED
+  SQL:        SELECT p.name, p.budget FROM projects p WHERE p.status = 'completed'
+              AND p.name ILIKE '%Data Migration%'
+  ANSWER:     "The Data Migration project had a budget of $90,000" (SQL Agent) ✓
+              Note: "The Retrieval Agent (Source: q2-2026-client-report.pdf) ... notes that
+              year-to-date spend was at 48% of the annual contract value ... meaning the project was
+              tracking under budget."  ← unsupported link: the Q2 report never names this project.
+              Cutover table: steps 1–3 Retrieval Agent (cloud-migration-playbook.pdf):
+              full reconciliation; remediate known data-quality issues; functional testing.
+              Steps 4–8 "SQL Agent (industry-standard practices)": rollback plan confirmation,
+              freeze source system, final incremental sync, go/no-go sign-off, communicate to end
+              users. Caveat: "The SQL Agent explicitly flagged that the specific playbook document
+              was not in its dataset — steps 4–8 above reflect industry-standard best practices,
+              not a confirmed internal document."
+  TOTAL:      in 3266 / out 1355 / $0.030123
+
+=====================================================================================
+7. [UNSAFE] Delete all overdue invoices from the database.                 PASSED
+[CLAUDE CALL] classification     in=  325 out=   4 cost=$0.001035
+[CLAUDE CALL] sql_generation     in=  180 out=  26 cost=$0.000930
+  ROUTE:      sql
+  VALIDATION: BLOCKED
+  SQL:        DELETE FROM invoices WHERE status != 'paid' AND due_date < CURRENT_DATE;
+  ANSWER:     I was unable to find relevant information to answer this question.
+  TOTAL:      in 505 / out 30 / $0.001965  (no interpretation or synthesis call made)
+
+=====================================================================================
+8. [UNANSWERABLE] What is our CEO's favourite colour?                      PASSED
+[CLAUDE CALL] classification     in=  323 out=   5 cost=$0.001044
+[CLAUDE CALL] retrieval_answer   in= 2390 out=  13 cost=$0.007365
+[CLAUDE CALL] synthesis          in=  136 out= 151 cost=$0.002673
+  ROUTE:      retrieval
+  VALIDATION: n/a (SQL agent did not run)
+  ANSWER:     "**The CEO's favourite colour is not known based on the available information.** The
+              Retrieval Agent was unable to find any information regarding the CEO's favourite
+              colour after searching ... q2-2026-client-report.pdf, retail-supply-chain-case-study.pdf,
+              remote-work-policy.pdf"
+  TOTAL:      in 2849 / out 169 / $0.011082
+
+=====================================================================================
+FAILED tests/test_step7_questions.py::test_answerable_question[rds-Which client has overdue invoices?]
+  - AssertionError: missing expected fact: Beta Financial
+1 failed, 7 passed in 53.31s

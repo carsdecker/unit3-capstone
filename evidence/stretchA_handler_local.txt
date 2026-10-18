@@ -1,0 +1,34 @@
+Stretch Goal A — lambda_handler carries history (checked LOCALLY before redeploying)
+Run on the AWS WorkSpace: python -m pytest tests/test_lambda_handler.py -v -s   → 3 passed in 17.99s
+Free regression first: validator + no_bypass + registry + memory → 27 passed.
+
+Handler contract: request {"question", "history"?} → response {..., "history": updated, capped to 3 turns}.
+Caller-supplied history is passed through trim_history (malformed turns dropped).
+Message fix included: a validator block now reports the validator's actual reason.
+
+Two-turn test (turn 2 sends back exactly the history turn 1 returned):
+[LOG] query_start: {"trace_id": "f546b45d", "history_turns": 0}
+[CLAUDE CALL] classification     in=  352 out=   4 cost=$0.001116
+[CLAUDE CALL] sql_generation     in=  234 out=  54 cost=$0.001512
+[CLAUDE CALL] sql_interpretation in=  148 out=  14 cost=$0.000654
+[CLAUDE CALL] synthesis          in=  160 out=  88 cost=$0.001800
+[LOG] query_complete: {"trace_id": "f546b45d", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 894, "output": 160, "cost_usd": 0.005082}}
+[LOG] query_start: {"trace_id": "873f6f3f", "history_turns": 1}
+[CLAUDE CALL] classification     in=  460 out=   4 cost=$0.001440
+[CLAUDE CALL] sql_generation     in=  342 out=  26 cost=$0.001416
+[CLAUDE CALL] sql_interpretation in=  118 out=  21 cost=$0.000669
+[CLAUDE CALL] synthesis          in=  131 out=  68 cost=$0.001413
+[LOG] query_complete: {"trace_id": "873f6f3f", "route": "sql", "sql_validation": "PASSED", ... "total": {"input": 1051, "output": 119, "cost_usd": 0.004938}}
+
+  turn 2 answer: "the total contract value for **Acme Corp** is **$250,000**. Source: SQL query —
+                  SELECT c.contract_value FROM clients c WHER[E c.name = 'Acme Corp' …]"
+  turn 2 history length: 2
+PASSED
+
+Original Step 8 `both` question also re-checked: 200, route both, PASSED, total 3597/484 $0.018051.
+
+NOTE (correction to an earlier claim): the memory feature also added a one-line instruction to the
+classifier and SQL-generation prompts ("If the question refers to the conversation…"), which is sent on
+EVERY query, history or not. Same `both` question before/after Stretch A: classification 335 → 361 and
+sql_generation 212 → 243 input tokens = +57 input tokens per query (~$0.00017). So memory is not quite
+free when unused — the instruction costs ~57 tokens; the history block itself costs nothing when absent.

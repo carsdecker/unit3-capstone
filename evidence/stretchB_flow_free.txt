@@ -1,0 +1,25 @@
+Stretch Goal B — confirmation flow through the REAL lambda_handler (FREE: Claude faked)
+Run on the AWS WorkSpace: python -m pytest tests/test_confirmation_flow.py -v -s   → 5 passed in 0.48s
+Where nothing may run, psycopg2.connect is a tripwire; where the query should run, it runs on the real RDS.
+Full free regression afterwards: validator + no_bypass + registry + memory + confirmation + foundation → 46 passed.
+
+1. Unusual query pauses, nothing executed                                   PASSED
+   [LOG] query_complete: {"route": "sql", "sql_validation": "NEEDS_CONFIRMATION", ...}
+   needs_confirmation=True reason=it returns rows from a whole table: no WHERE, no LIMIT and no aggregate
+   (tripwire on psycopg2.connect never fired; response has sql, reason, confirm{sql, route, token})
+
+2. Confirmation with ALTERED SQL (same token) is rejected                   PASSED
+   altered confirmation -> 403: Confirmation rejected: the SQL or route does not match the query that was flagged.
+   (tripwire never fired)
+
+3. Confirmation with the EXACT flagged query runs it                        PASSED
+   [LOG] query_start: {"trace_id": "5d164a7d", "history_turns": 0, "confirmed": true}
+   [LOG] query_complete: {"route": "sql", "sql_validation": "PASSED", "token_usage": {"sql_interpretation": …,
+         "synthesis": …}}   ← no classification and no sql_generation call: the signed SQL + route were used as-is
+   exact confirmation -> 200: validation=PASSED   (ran on the real database; generate_sql was a fail-if-called fake)
+
+4. A confirmed query is still validated                                     PASSED
+   signed token for "DROP TABLE invoices" → validation=BLOCKED   (tripwire never fired)
+
+5. Routine query runs without confirmation                                  PASSED
+   routine -> needs_confirmation=False validation=PASSED
