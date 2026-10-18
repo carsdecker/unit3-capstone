@@ -4,12 +4,14 @@ agents/sql_agent.py -- validated SQL Query Agent, wrapped to the standard
 (Course file from Deployment Patterns on AWS, with the changes noted below.)
 
 Self-contained: generate_sql, validate_sql and execute_query_safely are all in
-this file, so it works inside a Lambda package with nothing else bundled.
+this file, so it works inside a Lambda package with nothing else bundled
+(plus conversation.py for Stretch Goal A).
 """
 import os
 import psycopg2
 from dotenv import load_dotenv
 from bedrock_client import invoke_claude
+from conversation import format_history
 load_dotenv()
 
 # "status in invoices" added after Step 7: asked "Which client has overdue invoices?",
@@ -60,10 +62,16 @@ def validate_sql(query: str) -> dict:
     return {"valid": True, "reason": "OK"}
 
 
-def generate_sql(question: str) -> tuple[str, dict]:
+def generate_sql(question: str, history: list = None) -> tuple[str, dict]:
+    # Stretch Goal A: earlier turns are replayed (capped, see conversation.py) so a
+    # follow-up like "What about their total contract value?" can be resolved to the
+    # client named earlier, instead of becoming a total across all clients.
     prompt = (
         f"{SCHEMA_CONTEXT}\n\n"
+        f"{format_history(history)}"
         f"Generate a SQL query to answer: {question}\n\n"
+        "If the question refers to something from the conversation (e.g. 'their', "
+        "'that project'), use the conversation to resolve it.\n"
         "Return ONLY the SQL query. No explanation, no markdown, no backticks."
     )
     result = invoke_claude(prompt, max_tokens=512, component="sql_generation")
@@ -104,8 +112,8 @@ def execute_query_safely(sql: str) -> dict:
         return {"success": False, "error": str(e), "validation": "EXECUTION_ERROR", "sql": sql}
 
 
-def validated_sql_agent(question: str) -> dict:
-    sql, gen_usage = generate_sql(question)
+def validated_sql_agent(question: str, history: list = None) -> dict:
+    sql, gen_usage = generate_sql(question, history)
     result = execute_query_safely(sql)
 
     if not result["success"]:
@@ -118,7 +126,7 @@ def validated_sql_agent(question: str) -> dict:
             "token_usage": {"sql_generation": gen_usage},
         }
 
-        # Step 7 fix: the course deployment prompt showed only question, columns and rows.
+    # Step 7 fix: the course deployment prompt showed only question, columns and rows.
     # Without the SQL, Claude read the filtered client list as "the clients table" and
     # answered "there is no invoice data". It also used general knowledge to answer the
     # document half of "both" questions. The orchestrator-lab version included the SQL;
@@ -147,9 +155,10 @@ def validated_sql_agent(question: str) -> dict:
     }
 
 
-def run_sql_agent(question: str) -> dict:
-    """Standardized wrapper matching the Shared Tool Registry lab's interface."""
-    result = validated_sql_agent(question)
+def run_sql_agent(question: str, history: list = None) -> dict:
+    """Standardized wrapper matching the Shared Tool Registry lab's interface.
+    `history` is optional (Stretch Goal A); omitting it behaves exactly as before."""
+    result = validated_sql_agent(question, history)
     return {
         "success": result["validation"] == "PASSED",
         "answer": result["answer"],

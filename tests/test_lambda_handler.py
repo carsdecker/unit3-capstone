@@ -33,3 +33,18 @@ def test_both_question_meets_step8_pass_conditions():
     answer = body["answer"].lower()
     assert "sql agent" in answer and "retrieval agent" in answer   # combines both, with attribution
     assert body["token_usage"]["total"]["input"] > 0        # Step 8: non-zero token_usage
+
+@pytest.mark.live
+def test_two_turn_conversation_carries_history_through_the_handler():
+    # Turn 1: no history sent.
+    r1 = json.loads(invoke("How many active projects does Acme Corp have?")["body"])
+    assert len(r1["history"]) == 1
+
+    # Turn 2: send back exactly the history that turn 1 returned (the caller's job).
+    event = {"body": json.dumps({"question": "What about their total contract value?",
+                                 "history": r1["history"]})}
+    r2 = json.loads(handler(event, None)["body"])
+    print(f"\n  turn 2 answer: {r2['answer'][:200]}")
+    print(f"  turn 2 history length: {len(r2['history'])}")
+    assert "250000" in r2["answer"].replace(",", "")
+    assert len(r2["history"]) == 2

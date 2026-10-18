@@ -9,6 +9,7 @@ from bedrock_client import invoke_claude
 from agents.sql_agent import run_sql_agent
 from agents.retrieval_agent import run_retrieval_agent
 from tool_registry import get_all_schemas
+from conversation import format_history
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -20,6 +21,7 @@ class OrchestratorState(TypedDict):
     retrieval_result: Optional[dict]
     final_answer: Optional[str]
     token_usage: Optional[dict]     # per component + "total" (see add_total)
+    history: Optional[list]         # Stretch Goal A: prior {question, answer} turns
 
 
 # Classification node: Claude routes using the tool registry's descriptions.
@@ -27,6 +29,8 @@ class OrchestratorState(TypedDict):
 # misrouting 3 of 9 questions ("what is" sent SQL questions to "both"; "how much"
 # sent the home-office stipend question to SQL) -- keywords match words, not
 # meaning. Evidence: evidence/routing_keyword_baseline.txt.
+# Stretch Goal A: {history} lets a follow-up ("What about their contract value?")
+# be routed by what it refers to, not just its own words.
 ROUTER_PROMPT = """You route questions for a consulting firm's assistant to the right data source.
 
 Available tools:
@@ -37,8 +41,9 @@ sql - only the database is needed
 retrieval - only the documents are needed
 both - the question needs information from the database AND the documents
 If neither source could answer the question, reply retrieval (the documents agent will say it cannot find it).
+If the question refers to the conversation (e.g. "their", "that project"), use the conversation to decide.
 
-Question: {question}"""
+{history}Question: {question}"""
 
 VALID_ROUTES = {"sql", "retrieval", "both"}
 
@@ -47,8 +52,9 @@ def route_question(state: OrchestratorState) -> OrchestratorState:
     # The descriptions come straight from tool_registry.py, so editing a
     # description there changes routing here -- one source of truth.
     tools = "\n".join(f"- {s['name']}: {s['description']}" for s in get_all_schemas())
-    result = invoke_claude(ROUTER_PROMPT.format(tools=tools, question=state["question"]),
-                           max_tokens=5, component="classification")
+    prompt = ROUTER_PROMPT.format(tools=tools, history=format_history(state.get("history")),
+                                  question=state["question"])
+    result = invoke_claude(prompt, max_tokens=5, component="classification")
 
     # Normalise the reply: Claude may add a capital letter or a full stop.
     route = result["text"].strip().lower().strip(".")
@@ -65,7 +71,7 @@ def route_question(state: OrchestratorState) -> OrchestratorState:
 def call_sql_agent(state: OrchestratorState) -> OrchestratorState:
     if state["route"] not in ["sql", "both"]:
         return state            # not needed for this route: skip without calling the agent
-    result = run_sql_agent(state["question"])
+    result = run_sql_agent(state["question"], state.get("history"))
     return {**state, "sql_result": result}
 
 
@@ -103,8 +109,15 @@ def synthesise(state: OrchestratorState) -> OrchestratorState:
     sql_note = ""
     if state.get("sql_result") and not state["sql_result"].get("success"):
         if state["sql_result"]["metadata"].get("validation") == "BLOCKED":
-            sql_note = ("The database part of this request was blocked: this system only runs "
-                        "read-only queries, so the generated SQL was not executed.")
+            # Stretch A finding: the first version always said "only runs read-only
+            # queries", but a block can also mean Claude returned prose instead of SQL
+            # (seen in the no-memory control). Report the validator's actual reason.
+            reason = state["sql_result"]["answer"].removeprefix("Query blocked or failed: ")
+            sql_note = ("The database part of this request was blocked by the SQL safety check "
+                        f"({reason}), so the generated SQL was not executed.")
+        # if state["sql_result"]["metadata"].get("validation") == "BLOCKED":
+        #     sql_note = ("The database part of this request was blocked: this system only runs "
+        #                 "read-only queries, so the generated SQL was not executed.")
         else:
             sql_note = "The database query could not be completed, so no database results are available."
         context += f"SQL Agent Result:\n{sql_note}\n\n"
