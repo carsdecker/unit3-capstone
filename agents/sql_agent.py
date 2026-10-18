@@ -12,6 +12,7 @@ import psycopg2
 from dotenv import load_dotenv
 from bedrock_client import invoke_claude
 from conversation import format_history
+from confirmation import unusual_reason
 load_dotenv()
 
 # "status in invoices" added after Step 7: asked "Which client has overdue invoices?",
@@ -112,8 +113,26 @@ def execute_query_safely(sql: str) -> dict:
         return {"success": False, "error": str(e), "validation": "EXECUTION_ERROR", "sql": sql}
 
 
-def validated_sql_agent(question: str, history: list = None) -> dict:
-    sql, gen_usage = generate_sql(question, history)
+def validated_sql_agent(question: str, history: list = None, confirmed_sql: str = None) -> dict:
+    if confirmed_sql is None:
+        sql, gen_usage = generate_sql(question, history)
+        token_usage = {"sql_generation": gen_usage}
+        # Stretch Goal B: review step between generation and execution. A query that
+        # PASSES validation but is unusual (see confirmation.py) is not executed; it is
+        # returned for a person to confirm. (A query that fails validation skips this
+        # and is blocked by execute_query_safely as usual.)
+        if validate_sql(sql)["valid"]:
+            reason = unusual_reason(sql)
+            if reason:
+                return {"answer": f"Query needs confirmation: {reason}", "sql": sql,
+                        "validation": "NEEDS_CONFIRMATION", "reason": reason,
+                        "token_usage": token_usage}
+    else:
+        # A confirmed query (its token was verified by the handler) skips generation
+        # and the review step -- but NOT the validator, which runs inside
+        # execute_query_safely exactly as for every other query.
+        sql, token_usage = confirmed_sql, {}
+
     result = execute_query_safely(sql)
 
     if not result["success"]:
@@ -123,7 +142,7 @@ def validated_sql_agent(question: str, history: list = None) -> dict:
             "validation": result["validation"],
             # The generation call was still made (and paid for) even though the
             # SQL was blocked; the course version reported 0 here.
-            "token_usage": {"sql_generation": gen_usage},
+            "token_usage": token_usage,
         }
 
     # Step 7 fix: the course deployment prompt showed only question, columns and rows.
@@ -141,27 +160,29 @@ def validated_sql_agent(question: str, history: list = None) -> dict:
         "general knowledge. Answer concisely."
     )
     interpretation = invoke_claude(prompt, max_tokens=500, component="sql_interpretation")
+    token_usage["sql_interpretation"] = {"input": interpretation["input_tokens"],
+                                         "output": interpretation["output_tokens"],
+                                         "cost_usd": interpretation["cost_usd"]}
 
     return {
         "answer": interpretation["text"],
         "sql": sql,
         "validation": result["validation"],
-        "token_usage": {
-            "sql_generation": gen_usage,
-            "sql_interpretation": {"input": interpretation["input_tokens"],
-                                   "output": interpretation["output_tokens"],
-                                   "cost_usd": interpretation["cost_usd"]},
-        },
+        "token_usage": token_usage,
     }
 
 
-def run_sql_agent(question: str, history: list = None) -> dict:
+def run_sql_agent(question: str, history: list = None, confirmed_sql: str = None) -> dict:
     """Standardized wrapper matching the Shared Tool Registry lab's interface.
-    `history` is optional (Stretch Goal A); omitting it behaves exactly as before."""
-    result = validated_sql_agent(question, history)
+    `history` (Stretch A) and `confirmed_sql` (Stretch B) are optional; omitting
+    them behaves exactly as before."""
+    result = validated_sql_agent(question, history, confirmed_sql)
+    metadata = {"validation": result["validation"], "token_usage": result["token_usage"]}
+    if result["validation"] == "NEEDS_CONFIRMATION":
+        metadata.update({"needs_confirmation": True, "reason": result["reason"], "sql": result["sql"]})
     return {
         "success": result["validation"] == "PASSED",
         "answer": result["answer"],
         "sources": [f"SQL: {result['sql']}"],
-        "metadata": {"validation": result["validation"], "token_usage": result["token_usage"]},
+        "metadata": metadata,
     }

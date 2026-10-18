@@ -22,6 +22,7 @@ class OrchestratorState(TypedDict):
     final_answer: Optional[str]
     token_usage: Optional[dict]     # per component + "total" (see add_total)
     history: Optional[list]         # Stretch Goal A: prior {question, answer} turns
+    confirmed_sql: Optional[str]    # Stretch Goal B: an exact, already-verified query to run
 
 
 # Classification node: Claude routes using the tool registry's descriptions.
@@ -49,6 +50,11 @@ VALID_ROUTES = {"sql", "retrieval", "both"}
 
 
 def route_question(state: OrchestratorState) -> OrchestratorState:
+    if state.get("confirmed_sql") and state.get("route") in VALID_ROUTES:
+        # Stretch Goal B: a confirmation carries the route that was signed with the
+        # query, so it is not re-classified (re-classifying could pick another route).
+        return {**state, "token_usage": {}}
+
     # The descriptions come straight from tool_registry.py, so editing a
     # description there changes routing here -- one source of truth.
     tools = "\n".join(f"- {s['name']}: {s['description']}" for s in get_all_schemas())
@@ -71,12 +77,16 @@ def route_question(state: OrchestratorState) -> OrchestratorState:
 def call_sql_agent(state: OrchestratorState) -> OrchestratorState:
     if state["route"] not in ["sql", "both"]:
         return state            # not needed for this route: skip without calling the agent
-    result = run_sql_agent(state["question"], state.get("history"))
+    result = run_sql_agent(state["question"], state.get("history"), state.get("confirmed_sql"))
     return {**state, "sql_result": result}
 
 
 def call_retrieval_agent(state: OrchestratorState) -> OrchestratorState:
     if state["route"] not in ["retrieval", "both"]:
+        return state
+    if (state.get("sql_result") or {}).get("metadata", {}).get("needs_confirmation"):
+        # Stretch Goal B: the request is paused; the documents half runs after
+        # confirmation, so don't pay for it twice.
         return state
     result = run_retrieval_agent(state["question"])
     return {**state, "retrieval_result": result}
@@ -101,6 +111,15 @@ def synthesise(state: OrchestratorState) -> OrchestratorState:
         if state.get(key):
             usage.update(state[key]["metadata"].get("token_usage", {}))
 
+    sql_meta = (state.get("sql_result") or {}).get("metadata", {})
+    if sql_meta.get("needs_confirmation"):
+        # Stretch Goal B: paused for a person. State it plainly; no synthesis call.
+        return {**state,
+                "final_answer": (f"This query needs your confirmation before it runs, because "
+                                 f"{sql_meta['reason']}. Nothing has been executed. "
+                                 f"SQL: {sql_meta['sql']}"),
+                "token_usage": add_total(usage)}
+
     context = ""
 
     # Step 7 fix: a blocked or failed SQL agent used to vanish silently, so
@@ -115,9 +134,6 @@ def synthesise(state: OrchestratorState) -> OrchestratorState:
             reason = state["sql_result"]["answer"].removeprefix("Query blocked or failed: ")
             sql_note = ("The database part of this request was blocked by the SQL safety check "
                         f"({reason}), so the generated SQL was not executed.")
-        # if state["sql_result"]["metadata"].get("validation") == "BLOCKED":
-        #     sql_note = ("The database part of this request was blocked: this system only runs "
-        #                 "read-only queries, so the generated SQL was not executed.")
         else:
             sql_note = "The database query could not be completed, so no database results are available."
         context += f"SQL Agent Result:\n{sql_note}\n\n"
